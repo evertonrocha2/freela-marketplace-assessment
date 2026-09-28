@@ -1,0 +1,1361 @@
+{
+  "info": {
+    "name": "Freela Marketplace - Evidências",
+    "description": "Chamadas para gerar as evidências do assessment. Rode as pastas **na ordem**, de 1 a 7: as variáveis (`contratoId`, `sequenciaConcluido`, `falhaId`...) são preenchidas pelos scripts de teste de cada requisição. A aba **Test Results** mostra o que cada chamada comprova.\n\nTambém dá para rodar tudo de uma vez pelo **Runner** (botão Run na collection).\n\nAs variáveis `gateway`, `kafkaUi`, `loki` e `zipkin` apontam para as portas do docker-compose (8080, 8090, 3100 e 9411). Se a infraestrutura subir em outras portas, ajuste as variáveis.\n\nPara uma nova rodada limpa, troque `correlationId` (ex.: `print-002`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Gateway e contrato-service",
+      "description": "Requisição recebida pelo API Gateway, alteração persistida no contrato-service e evento gravado na outbox.\n\n**Evento publicado no Kafka:** depois da 1.5, abra o Kafka UI em http://localhost:8090 → Topics → `freela.contratos.eventos` → Messages. As três mensagens do contrato aparecem na mesma partição, com a chave igual ao `contratoId` e offsets crescentes.",
+      "item": [
+        {
+          "name": "1.1 Criar contrato",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": \"{{clienteId}}\",\n  \"freelancerId\": \"{{freelancerId}}\",\n  \"titulo\": \"Construção de API de pagamentos\",\n  \"valor\": 3500.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created pelo API Gateway\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Gateway devolve o X-Correlation-Id\", () =>",
+                  "    pm.expect(pm.response.headers.get(\"X-Correlation-Id\")).to.eql(pm.variables.get(\"correlationId\")));",
+                  "const contrato = pm.response.json();",
+                  "pm.test(\"Contrato criado em ATIVO\", () => pm.expect(contrato.status).to.eql(\"ATIVO\"));",
+                  "pm.collectionVariables.set(\"contratoId\", contrato.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Registrar entrega",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoId}}/entregas",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoId}}",
+                "entregas"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Contrato em ENTREGA_REGISTRADA\", () => pm.expect(pm.response.json().status).to.eql(\"ENTREGA_REGISTRADA\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 Concluir contrato",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoId}}/conclusao",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoId}}",
+                "conclusao"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Contrato em CONCLUIDO\", () => pm.expect(pm.response.json().status).to.eql(\"CONCLUIDO\"));",
+                  "",
+                  "// espera o relay da outbox e os consumidores antes da proxima chamada",
+                  "setTimeout(() => {}, 2000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 Buscar contrato",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Estado persistido: CONCLUIDO\", () => pm.expect(pm.response.json().status).to.eql(\"CONCLUIDO\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 Outbox do contrato",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/outbox?contratoId={{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "outbox"
+              ],
+              "query": [
+                {
+                  "key": "contratoId",
+                  "value": "{{contratoId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const itens = pm.response.json();",
+                  "const contratoId = pm.variables.get(\"contratoId\");",
+                  "pm.test(\"3 eventos gravados na outbox\", () => pm.expect(itens.length).to.eql(3));",
+                  "pm.test(\"Na ordem das transições\", () =>",
+                  "    pm.expect(itens.map(i => i.eventType)).to.eql([\"ContratoCriado\", \"EntregaRegistrada\", \"ContratoConcluido\"]));",
+                  "pm.test(\"Chave de publicação no Kafka = contratoId\", () => itens.forEach(i => pm.expect(i.chave).to.eql(contratoId)));",
+                  "pm.test(\"Todos publicados no Kafka\", () => itens.forEach(i => pm.expect(i.status).to.eql(\"PUBLICADO\")));",
+                  "const concluido = itens.find(i => i.eventType === \"ContratoConcluido\");",
+                  "if (concluido) pm.collectionVariables.set(\"sequenciaConcluido\", concluido.sequencia);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Consumo pelos serviços",
+      "description": "Consumo do evento pelos serviços interessados e persistência realizada por cada um, no próprio banco.",
+      "item": [
+        {
+          "name": "2.1 Notificações do contrato",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/notificacoes?contratoId={{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "notificacoes"
+              ],
+              "query": [
+                {
+                  "key": "contratoId",
+                  "value": "{{contratoId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const notificacoes = pm.response.json();",
+                  "pm.test(\"3 notificações, uma por evento\", () => pm.expect(notificacoes.length).to.eql(3));",
+                  "const entrega = notificacoes.find(n => n.tipo === \"EntregaRegistrada\");",
+                  "pm.test(\"A entrega notifica o cliente\", () =>",
+                  "    pm.expect(entrega && entrega.destinatarioId).to.eql(pm.variables.get(\"clienteId\")));",
+                  "pm.test(\"Os demais eventos notificam o freelancer\", () =>",
+                  "    notificacoes.filter(n => n.tipo !== \"EntregaRegistrada\")",
+                  "        .forEach(n => pm.expect(n.destinatarioId).to.eql(pm.variables.get(\"freelancerId\"))));",
+                  "pm.collectionVariables.set(\"notificacoesAntes\", notificacoes.length);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Reputação do freelancer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/reputacoes/{{freelancerId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "reputacoes",
+                "{{freelancerId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const reputacao = pm.response.json();",
+                  "pm.test(\"Conclusão contabilizada na reputação\", () => pm.expect(reputacao.contratosConcluidos).to.be.at.least(1));",
+                  "pm.test(\"ultimoEventoId aponta para o evento que atualizou\", () => pm.expect(reputacao.ultimoEventoId).to.be.a(\"string\"));",
+                  "pm.collectionVariables.set(\"concluidosAntes\", reputacao.contratosConcluidos);",
+                  "pm.collectionVariables.set(\"valorTotalAntes\", reputacao.valorTotal);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Auditoria do contrato",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/auditoria?contratoId={{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "auditoria"
+              ],
+              "query": [
+                {
+                  "key": "contratoId",
+                  "value": "{{contratoId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const registros = pm.response.json();",
+                  "pm.test(\"3 eventos auditados\", () => pm.expect(registros.length).to.eql(3));",
+                  "pm.test(\"Cada registro tem eventId, tipo, contrato, data/hora, correlationId e conteúdo\", () =>",
+                  "    registros.forEach(r => {",
+                  "        pm.expect(r.eventId).to.be.a(\"string\");",
+                  "        pm.expect(r.eventType).to.be.a(\"string\");",
+                  "        pm.expect(r.contratoId).to.eql(pm.variables.get(\"contratoId\"));",
+                  "        pm.expect(r.occurredAt).to.be.a(\"string\");",
+                  "        pm.expect(r.correlationId).to.eql(pm.variables.get(\"correlationId\"));",
+                  "        pm.expect(r.payload).to.be.a(\"string\");",
+                  "    }));",
+                  "pm.collectionVariables.set(\"auditoriaAntes\", registros.length);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Mensagem duplicada",
+      "description": "Republica o `ContratoConcluido` com o **mesmo eventId**. Os três consumidores recebem de novo uma mensagem que já processaram e não produzem efeito nenhum. Rode depois da pasta 2, que guarda os números de antes.",
+      "item": [
+        {
+          "name": "3.1 Reenviar ContratoConcluido (mesmo eventId)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/outbox/{{sequenciaConcluido}}/reenvio",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "outbox",
+                "{{sequenciaConcluido}}",
+                "reenvio"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Mensagem recolocada na fila de publicação\", () => pm.expect(pm.response.json().status).to.eql(\"PENDENTE\"));",
+                  "",
+                  "// espera o relay da outbox e os consumidores antes da proxima chamada",
+                  "setTimeout(() => {}, 4000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 Notificações depois do reenvio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/notificacoes?contratoId={{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "notificacoes"
+              ],
+              "query": [
+                {
+                  "key": "contratoId",
+                  "value": "{{contratoId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const antes = Number(pm.variables.get(\"notificacoesAntes\"));",
+                  "pm.test(`Nenhuma notificação repetida (continua ${antes})`, () => pm.expect(pm.response.json().length).to.eql(antes));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 Reputação depois do reenvio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/reputacoes/{{freelancerId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "reputacoes",
+                "{{freelancerId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "const antes = Number(pm.variables.get(\"concluidosAntes\"));",
+                  "pm.test(`contratosConcluidos não incrementou (continua ${antes})`, () => pm.expect(r.contratosConcluidos).to.eql(antes));",
+                  "pm.test(\"valorTotal não somou de novo\", () => pm.expect(Number(r.valorTotal)).to.eql(Number(pm.variables.get(\"valorTotalAntes\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 Auditoria depois do reenvio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/auditoria?contratoId={{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "auditoria"
+              ],
+              "query": [
+                {
+                  "key": "contratoId",
+                  "value": "{{contratoId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const antes = Number(pm.variables.get(\"auditoriaAntes\"));",
+                  "pm.test(`Nenhum registro duplicado (continua ${antes})`, () => pm.expect(pm.response.json().length).to.eql(antes));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 Marcas de idempotência (notificação)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/notificacoes/eventos-processados?contratoId={{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "notificacoes",
+                "eventos-processados"
+              ],
+              "query": [
+                {
+                  "key": "contratoId",
+                  "value": "{{contratoId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const marcas = pm.response.json();",
+                  "pm.test(\"Uma marca por eventId processado\", () => pm.expect(new Set(marcas.map(m => m.eventId)).size).to.eql(marcas.length));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 Marcas de idempotência (reputação)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/reputacoes/eventos-processados?contratoId={{contratoId}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "reputacoes",
+                "eventos-processados"
+              ],
+              "query": [
+                {
+                  "key": "contratoId",
+                  "value": "{{contratoId}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const marcas = pm.response.json();",
+                  "pm.test(\"Só o ContratoConcluido marcou a reputação\", () => pm.expect(marcas.map(m => m.eventType)).to.eql([\"ContratoConcluido\"]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Ordem por contrato",
+      "description": "Três contratos com os eventos **intercalados**: cria A, B e C, registra a entrega dos três e conclui os três. Cada contrato cai numa partição conforme a chave, e os consumidores processam as partições em paralelo. A 4.10 confere que, para cada contrato, a ordem processada foi Criado → Entrega → Concluído.\n\n**Partições:** no Kafka UI (http://localhost:8090), tópico `freela.contratos.eventos` → Messages, filtrando pela chave de cada contrato.",
+      "item": [
+        {
+          "name": "4.1 Criar contrato A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": \"{{clienteId}}\",\n  \"freelancerId\": \"{{freelancerParalelo}}\",\n  \"titulo\": \"Contrato paralelo A\",\n  \"valor\": 100.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// um freelancer novo a cada execucao, para a contagem da reputacao comecar do zero",
+                  "pm.collectionVariables.set(\"freelancerParalelo\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"contratoA\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 Criar contrato B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": \"{{clienteId}}\",\n  \"freelancerId\": \"{{freelancerParalelo}}\",\n  \"titulo\": \"Contrato paralelo B\",\n  \"valor\": 100.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"contratoB\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Criar contrato C",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": \"{{clienteId}}\",\n  \"freelancerId\": \"{{freelancerParalelo}}\",\n  \"titulo\": \"Contrato paralelo C\",\n  \"valor\": 100.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"contratoC\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 Registrar entrega A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoA}}/entregas",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoA}}",
+                "entregas"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 Registrar entrega B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoB}}/entregas",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoB}}",
+                "entregas"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 Registrar entrega C",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoC}}/entregas",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoC}}",
+                "entregas"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.7 Concluir A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoA}}/conclusao",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoA}}",
+                "conclusao"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.8 Concluir B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoB}}/conclusao",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoB}}",
+                "conclusao"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.9 Concluir C",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}-ordem"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway}}/api/contratos/{{contratoC}}/conclusao",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "contratos",
+                "{{contratoC}}",
+                "conclusao"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "",
+                  "// espera o relay da outbox e os consumidores antes da proxima chamada",
+                  "setTimeout(() => {}, 3000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.10 Auditoria: ordem por contrato",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/auditoria?correlationId={{correlationId}}-ordem",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "auditoria"
+              ],
+              "query": [
+                {
+                  "key": "correlationId",
+                  "value": "{{correlationId}}-ordem"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// ordena pelo momento em que a auditoria recebeu cada evento, ou seja, a ordem real de processamento",
+                  "const eventos = pm.response.json().slice().sort((a, b) => new Date(a.recebidoEm) - new Date(b.recebidoEm));",
+                  "const linhas = [];",
+                  "[\"A\", \"B\", \"C\"].forEach(letra => {",
+                  "    const id = pm.variables.get(\"contrato\" + letra);",
+                  "    const sequencia = eventos.filter(e => e.contratoId === id).map(e => e.eventType);",
+                  "    linhas.push({ letra, id, sequencia: sequencia.join(\" → \") });",
+                  "    pm.test(`Contrato ${letra}: ${sequencia.join(\" → \")}`, () =>",
+                  "        pm.expect(sequencia).to.eql([\"ContratoCriado\", \"EntregaRegistrada\", \"ContratoConcluido\"]));",
+                  "});",
+                  "pm.visualizer.set(`",
+                  "<style>body{font:13px sans-serif} table{border-collapse:collapse} td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}</style>",
+                  "<h3>Ordem de processamento por contrato</h3>",
+                  "<table><tr><th>Contrato</th><th>contratoId</th><th>Eventos, na ordem em que foram processados</th></tr>",
+                  "{{#each linhas}}<tr><td>{{letra}}</td><td><code>{{id}}</code></td><td>{{sequencia}}</td></tr>{{/each}}</table>`, { linhas });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.11 Reputação do freelancer dos três contratos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/reputacoes/{{freelancerParalelo}}",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "reputacoes",
+                "{{freelancerParalelo}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test(\"3 conclusões contabilizadas, nenhuma perdida\", () => pm.expect(r.contratosConcluidos).to.eql(3));",
+                  "pm.test(\"valorTotal = 300\", () => pm.expect(Number(r.valorTotal)).to.eql(300));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Logs centralizados (Loki)",
+      "description": "Uma única consulta ao Loki traz os logs da operação inteira, de todos os serviços, pelo `correlationId`. Abra a aba **Visualize** da resposta para ver a tabela.\n\n**No Grafana:** http://localhost:3000/d/freela-rastreamento?var-correlationId=print-001 (troque o valor se mudar a variável `correlationId`).",
+      "item": [
+        {
+          "name": "5.1 Logs da operação por correlationId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{loki}}/loki/api/v1/query_range?query={service=~\"api-gateway|contrato-service|notificacao-service|reputacao-service|auditoria-service\"} | json | correlationId = `{{correlationId}}`&limit=1000&direction=forward",
+              "host": [
+                "{{loki}}"
+              ],
+              "path": [
+                "loki",
+                "api",
+                "v1",
+                "query_range"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{service=~\"api-gateway|contrato-service|notificacao-service|reputacao-service|auditoria-service\"} | json | correlationId = `{{correlationId}}`"
+                },
+                {
+                  "key": "limit",
+                  "value": "1000"
+                },
+                {
+                  "key": "direction",
+                  "value": "forward"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const resultado = pm.response.json().data.result;",
+                  "const linhas = [];",
+                  "resultado.forEach(stream => stream.values.forEach(([ts, linha]) => {",
+                  "    let j = {};",
+                  "    try { j = JSON.parse(linha); } catch (e) { }",
+                  "    linhas.push({",
+                  "        ts,",
+                  "        hora: new Date(Number(ts.slice(0, 13))).toISOString().slice(11, 23),",
+                  "        servico: stream.stream.service,",
+                  "        mensagem: String(j.message || linha).replace(/\\s+/g, \" \").slice(0, 160)",
+                  "    });",
+                  "}));",
+                  "linhas.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));",
+                  "const servicos = [...new Set(linhas.map(l => l.servico))].sort();",
+                  "pm.test(`${linhas.length} linhas de ${servicos.length} serviços numa única consulta`, () =>",
+                  "    pm.expect(servicos).to.include.members([\"api-gateway\", \"contrato-service\", \"notificacao-service\", \"reputacao-service\", \"auditoria-service\"]));",
+                  "pm.visualizer.set(`",
+                  "<style>body{font:12px sans-serif} table{border-collapse:collapse} td,th{border:1px solid #bbb;padding:3px 6px;text-align:left;vertical-align:top} td.s{white-space:nowrap}</style>",
+                  "<h3>{{total}} linhas de log, {{qtd}} serviços: {{servicos}}</h3>",
+                  "<table><tr><th>hora (UTC)</th><th>serviço</th><th>mensagem</th></tr>",
+                  "{{#each linhas}}<tr><td class=\"s\">{{hora}}</td><td class=\"s\">{{servico}}</td><td><code>{{mensagem}}</code></td></tr>{{/each}}</table>`,",
+                  "    { linhas, total: linhas.length, qtd: servicos.length, servicos: servicos.join(\", \") });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Trace no Zipkin",
+      "description": "Busca os traces da operação pela tag `correlationId`. Um trace por requisição HTTP, cada um passando por gateway, contrato-service, Kafka e os três consumidores. Abra a aba **Visualize**.\n\n**No Zipkin:** http://localhost:9411/zipkin/?annotationQuery=correlationId%3Dprint-001",
+      "item": [
+        {
+          "name": "6.1 Traces da operação por correlationId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{zipkin}}/api/v2/traces?annotationQuery=correlationId={{correlationId}}&limit=20",
+              "host": [
+                "{{zipkin}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "traces"
+              ],
+              "query": [
+                {
+                  "key": "annotationQuery",
+                  "value": "correlationId={{correlationId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const traces = pm.response.json();",
+                  "const esperados = [\"api-gateway\", \"auditoria-service\", \"contrato-service\", \"notificacao-service\", \"reputacao-service\"];",
+                  "const resumo = traces.map(t => ({",
+                  "    traceId: t[0].traceId,",
+                  "    spans: t.length,",
+                  "    servicos: [...new Set(t.map(s => (s.localEndpoint || {}).serviceName))].sort().join(\", \")",
+                  "}));",
+                  "pm.test(`${traces.length} trace(s) encontrado(s) pela tag correlationId`, () => pm.expect(traces.length).to.be.above(0));",
+                  "pm.test(\"Trace atravessa gateway, contrato-service, Kafka e os 3 consumidores\", () =>",
+                  "    pm.expect(resumo.some(r => esperados.every(s => r.servicos.includes(s)))).to.be.true);",
+                  "const maior = traces.slice().sort((a, b) => b.length - a.length)[0] || [];",
+                  "const spans = maior.slice().sort((a, b) => a.timestamp - b.timestamp).map(s => ({",
+                  "    servico: (s.localEndpoint || {}).serviceName,",
+                  "    tipo: s.kind || \"-\",",
+                  "    nome: s.name,",
+                  "    ms: ((s.duration || 0) / 1000).toFixed(1)",
+                  "}));",
+                  "pm.visualizer.set(`",
+                  "<style>body{font:13px sans-serif} table{border-collapse:collapse;margin-bottom:16px} td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}</style>",
+                  "<h3>Traces da operação</h3>",
+                  "<table><tr><th>traceId</th><th>spans</th><th>serviços</th></tr>",
+                  "{{#each resumo}}<tr><td><code>{{traceId}}</code></td><td>{{spans}}</td><td>{{servicos}}</td></tr>{{/each}}</table>",
+                  "<h3>Spans do trace <code>{{traceId}}</code></h3>",
+                  "<table><tr><th>serviço</th><th>tipo</th><th>span</th><th>ms</th></tr>",
+                  "{{#each spans}}<tr><td>{{servico}}</td><td>{{tipo}}</td><td>{{nome}}</td><td>{{ms}}</td></tr>{{/each}}</table>`,",
+                  "    { resumo, spans, traceId: maior.length ? maior[0].traceId : \"\" });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Falha e dead letter topic",
+      "description": "Publica um JSON quebrado direto no tópico, pela API do Kafka UI. Os três consumidores falham, a mensagem vai para o `freela.contratos.eventos.dlt` e a auditoria registra uma falha por grupo consumidor. Depois, reprocessa uma delas. **Rode por último.**\n\n**DLT no Kafka UI:** http://localhost:8090 → Topics → `freela.contratos.eventos.dlt` → Messages (os headers `kafka_dlt-*` trazem tópico, partição, offset e exceção de origem).",
+      "item": [
+        {
+          "name": "7.1 Publicar mensagem inválida no tópico (Kafka UI)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{kafkaUi}}/api/clusters/freela-local/topics/freela.contratos.eventos/messages",
+              "host": [
+                "{{kafkaUi}}"
+              ],
+              "path": [
+                "api",
+                "clusters",
+                "freela-local",
+                "topics",
+                "freela.contratos.eventos",
+                "messages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partition\": 0,\n  \"key\": \"contrato-invalido\",\n  \"content\": \"{isto nao e json\",\n  \"keySerde\": \"String\",\n  \"valueSerde\": \"String\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Mensagem publicada no Kafka\", () => pm.response.to.have.status(200));",
+                  "",
+                  "// espera o relay da outbox e os consumidores antes da proxima chamada",
+                  "setTimeout(() => {}, 6000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 Falhas registradas (DLT)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/auditoria/falhas",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "auditoria",
+                "falhas"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const falhas = pm.response.json().slice().sort((a, b) => new Date(b.recebidoEm) - new Date(a.recebidoEm));",
+                  "pm.test(\"Falhas registradas pela auditoria\", () => pm.expect(falhas.length).to.be.at.least(3));",
+                  "const ultima = falhas[0] || {};",
+                  "const mesmaOrigem = falhas.filter(f => f.particaoOriginal === ultima.particaoOriginal && f.offsetOriginal === ultima.offsetOriginal);",
+                  "pm.test(\"Uma falha por grupo consumidor (notificação, reputação e auditoria)\", () =>",
+                  "    pm.expect(mesmaOrigem.map(f => f.grupoConsumidor).sort()).to.eql([\"auditoria-service\", \"notificacao-service\", \"reputacao-service\"]));",
+                  "pm.test(\"Guarda tópico, partição e offset de origem\", () =>",
+                  "    pm.expect(ultima.topicoOriginal).to.eql(\"freela.contratos.eventos\"));",
+                  "pm.collectionVariables.set(\"falhaId\", ultima.id);",
+                  "pm.collectionVariables.set(\"falhasAntes\", falhas.length);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 Reprocessar a falha",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/auditoria/falhas/{{falhaId}}/reprocessar",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "auditoria",
+                "falhas",
+                "{{falhaId}}",
+                "reprocessar"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Republicada no tópico principal\", () => pm.expect(pm.response.json().reenviadoEm).to.be.a(\"string\"));",
+                  "",
+                  "// espera o relay da outbox e os consumidores antes da proxima chamada",
+                  "setTimeout(() => {}, 6000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.4 Falhas depois do reprocessamento",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway}}/api/auditoria/falhas",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "api",
+                "auditoria",
+                "falhas"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const antes = Number(pm.variables.get(\"falhasAntes\"));",
+                  "pm.test(\"A mensagem continua inválida: voltou ao DLT, uma vez por consumidor\", () =>",
+                  "    pm.expect(pm.response.json().length).to.eql(antes + 3));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "kafkaUi",
+      "value": "http://localhost:8090"
+    },
+    {
+      "key": "loki",
+      "value": "http://localhost:3100"
+    },
+    {
+      "key": "zipkin",
+      "value": "http://localhost:9411"
+    },
+    {
+      "key": "correlationId",
+      "value": "print-001"
+    },
+    {
+      "key": "clienteId",
+      "value": "11111111-1111-1111-1111-111111111111"
+    },
+    {
+      "key": "freelancerId",
+      "value": "22222222-2222-2222-2222-222222222222"
+    },
+    {
+      "key": "contratoId",
+      "value": ""
+    },
+    {
+      "key": "sequenciaConcluido",
+      "value": ""
+    },
+    {
+      "key": "freelancerParalelo",
+      "value": ""
+    },
+    {
+      "key": "contratoA",
+      "value": ""
+    },
+    {
+      "key": "contratoB",
+      "value": ""
+    },
+    {
+      "key": "contratoC",
+      "value": ""
+    },
+    {
+      "key": "falhaId",
+      "value": ""
+    }
+  ]
+}

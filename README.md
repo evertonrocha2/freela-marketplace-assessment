@@ -471,6 +471,11 @@ gravação na outbox, publicação no Kafka, consumo pelos três serviços, reen
 duplicada, ordenação com vários contratos em paralelo, mensagem inválida indo para o dead letter
 topic e o reprocessamento dela, e a mesma operação consultada no Grafana e no Zipkin.
 
+Os prints de uma execução completa estão em [evidencias/README.md](evidencias/README.md). Eles foram
+gerados com a collection do Postman em
+[postman/Freela-Marketplace.postman_collection.json](postman/Freela-Marketplace.postman_collection.json):
+31 chamadas em 7 pastas, na ordem das evidências, com testes que conferem o resultado de cada uma.
+
 ## Portas
 
 | Componente | Porta |

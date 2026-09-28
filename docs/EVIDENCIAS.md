@@ -1,7 +1,12 @@
 # Evidências da execução
 
 Roteiro para reproduzir cada evidência pedida no enunciado. Cada seção diz o que executar e o que
-o resultado comprova.
+o resultado comprova. Os prints de uma execução completa estão em
+[evidencias/README.md](../evidencias/README.md).
+
+As mesmas chamadas estão prontas na collection do Postman
+[postman/Freela-Marketplace.postman_collection.json](../postman/Freela-Marketplace.postman_collection.json).
+Importe no Postman e rode as pastas de 1 a 7: as variáveis são preenchidas pelos próprios testes.
 
 | Item pedido pelo enunciado | Seção | O que deve aparecer |
 |---|---|---|

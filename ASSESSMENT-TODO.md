@@ -98,4 +98,4 @@ mvn test        # 38 testes, sem depender da infraestrutura Docker
 | 10 | Tratamento de falhas | [docs/CONFIABILIDADE.md](docs/CONFIABILIDADE.md) §4, DLT e reprocessamento |
 | 11 | Infraestrutura | `infra/docker-compose.yml`. Mantém Postgres, Kafka e Kafka UI da base e acrescenta Zipkin, Loki e Grafana. Eureka e Gateway seguem como aplicações, como vieram na base |
 | 12 | Documentação | `README.md` e `docs/` |
-| 13 | Evidências | [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md) |
+| 13 | Evidências | Prints em [evidencias/README.md](evidencias/README.md), roteiro em [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md) |
