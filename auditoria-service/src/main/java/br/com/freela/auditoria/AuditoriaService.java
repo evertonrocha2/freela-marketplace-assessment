@@ -20,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuditoriaService {
 
     private static final Logger log = LoggerFactory.getLogger(AuditoriaService.class);
-    private static final String CONSUMIDOR = "auditoria-service";
+    /** Nome do consumidor: vai para os logs de consumo e para a chave de idempotencia. */
+    static final String CONSUMIDOR = "auditoria-service";
 
     private final EventoAuditoriaRepository repository;
     private final ControleIdempotencia idempotencia;

@@ -40,13 +40,13 @@ public abstract class ConsumidorDeEventos {
         this.servico = servico;
     }
 
-    @Autowired(required = false)
+    @Autowired
     public void setMarcadorDeTrace(MarcadorDeTrace marcadorDeTrace) {
         this.marcadorDeTrace = marcadorDeTrace;
     }
 
     public void consumir(ConsumerRecord<String, String> registro) {
-        try (EscopoMdc escopo = EscopoMdc.de(HeadersKafka.mdc(registro))) {
+        try (EscopoMdc escopo = HeadersKafka.escopoDeLog(registro)) {
             long inicio = System.nanoTime();
             marcarTrace();
             log.info("kafka.consumo.inicio servico={} topico={} particao={} offset={} chave={} thread={}",
@@ -75,10 +75,8 @@ public abstract class ConsumidorDeEventos {
      * registradas pelo escopo aberto em {@link #consumir}, entao o fechamento dele restaura tudo.
      */
     private static void completarContexto(EventoEnvelope envelope) {
-        completar(MdcKeys.CORRELATION_ID, envelope.correlationId());
-        completar(MdcKeys.EVENT_ID, String.valueOf(envelope.eventId()));
-        completar(MdcKeys.EVENT_TYPE, envelope.eventType());
-        completar(MdcKeys.CONTRATO_ID, String.valueOf(envelope.contratoId()));
+        EscopoMdc.contextoDeEvento(envelope.correlationId(), envelope.eventId(), envelope.eventType(),
+                envelope.contratoId()).forEach(ConsumidorDeEventos::completar);
     }
 
     private static void completar(String chave, String valor) {
@@ -89,9 +87,7 @@ public abstract class ConsumidorDeEventos {
     }
 
     private void marcarTrace() {
-        if (marcadorDeTrace != null) {
-            marcadorDeTrace.marcar(MarcadorDeTrace.TAG_CORRELATION_ID, MDC.get(MdcKeys.CORRELATION_ID));
-            marcadorDeTrace.marcar(MarcadorDeTrace.TAG_CONTRATO_ID, MDC.get(MdcKeys.CONTRATO_ID));
-        }
+        marcadorDeTrace.marcar(MarcadorDeTrace.TAG_CORRELATION_ID, MDC.get(MdcKeys.CORRELATION_ID));
+        marcadorDeTrace.marcar(MarcadorDeTrace.TAG_CONTRATO_ID, MDC.get(MdcKeys.CONTRATO_ID));
     }
 }

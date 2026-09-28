@@ -63,10 +63,6 @@ public class EventoProcessado {
         return eventId + ":" + consumidor;
     }
 
-    public String getId() {
-        return id;
-    }
-
     public UUID getEventId() {
         return eventId;
     }

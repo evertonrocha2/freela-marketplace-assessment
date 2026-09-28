@@ -26,7 +26,7 @@ Daí em diante:
 2. `ContratoApplicationService` lê o MDC e grava o `correlationId` na linha da outbox.
 3. O relay publica o valor no envelope e no header `X-Correlation-Id` da mensagem.
 4. Cada consumidor monta o MDC a partir dos headers **antes** de desserializar o corpo
-   (`HeadersKafka.mdc`). Se o payload estiver corrompido, a linha de erro ainda sai com
+   (`HeadersKafka.escopoDeLog`). Se o payload estiver corrompido, a linha de erro ainda sai com
    `correlationId` e `eventId` — que é justamente quando rastrear é mais necessário. Depois de
    ler o envelope, o que faltou nos headers é completado com o que veio no corpo
    (`ConsumidorDeEventos`), o que cobre um produtor que não preencheu os headers.
@@ -42,8 +42,8 @@ erro reportado por um usuário já vem com a chave de busca.
 
 ### Formato
 
-`logback-spring.xml` de cada aplicação inclui `logback/freela-base.xml`, que vem do módulo
-`freela-observability`. Três destinos:
+Todas as aplicações usam o mesmo `logback-spring.xml`, que vem do módulo `freela-observability` e
+inclui `logback/freela-base.xml`. Três destinos:
 
 | Appender | Destino | Formato |
 |---|---|---|
@@ -144,7 +144,9 @@ no Zipkin.
 ## Tracing distribuído
 
 `spring-boot-starter-zipkin` (Micrometer Tracing + Brave) em todas as seis aplicações.
-Amostragem em 100% e propagação W3C (`traceparent`).
+Amostragem em 100% e propagação W3C (`traceparent`). A configuração fica num arquivo só,
+`freela-observability/src/main/resources/freela/observabilidade.yml`, que cada aplicação importa
+pelo `spring.config.import`:
 
 ```yaml
 management:

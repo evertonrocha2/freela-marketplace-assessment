@@ -14,7 +14,8 @@ O sistema é composto por oito módulos Maven, seis deles aplicações Spring Bo
 - `notificacao-service`: notificações do ciclo de vida do contrato.
 - `reputacao-service`: números agregados por freelancer.
 - `auditoria-service`: registro de todos os eventos e das mensagens que falharam.
-- `freela-common`: contrato de mensageria, correlação e idempotência compartilhados.
+- `freela-common`: contrato de mensageria, correlação, idempotência e a configuração comum dos
+  consumidores (`freela/consumidor.yml`).
 - `freela-observability`: configuração de log e tracing comum a todas as aplicações.
 
 A comunicação entre o `contrato-service` e os demais é assíncrona, por Apache Kafka. Não há

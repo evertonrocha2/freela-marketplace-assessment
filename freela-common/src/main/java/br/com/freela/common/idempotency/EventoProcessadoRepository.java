@@ -8,5 +8,9 @@ public interface EventoProcessadoRepository extends JpaRepository<EventoProcessa
 
     List<EventoProcessado> findByContratoIdOrderByProcessadoEmAsc(UUID contratoId);
 
-    List<EventoProcessado> findByEventId(UUID eventId);
+    /** Marcas de um contrato, ou todas quando {@code contratoId} for nulo. */
+    default List<EventoProcessadoResponse> listar(UUID contratoId) {
+        List<EventoProcessado> eventos = contratoId == null ? findAll() : findByContratoIdOrderByProcessadoEmAsc(contratoId);
+        return eventos.stream().map(EventoProcessadoResponse::de).toList();
+    }
 }

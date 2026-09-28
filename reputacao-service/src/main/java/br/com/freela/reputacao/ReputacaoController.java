@@ -1,7 +1,7 @@
 package br.com.freela.reputacao;
 
-import br.com.freela.common.idempotency.EventoProcessado;
 import br.com.freela.common.idempotency.EventoProcessadoRepository;
+import br.com.freela.common.idempotency.EventoProcessadoResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -38,10 +38,7 @@ public class ReputacaoController {
     @GetMapping("/eventos-processados")
     public List<EventoProcessadoResponse> eventosProcessados(@RequestParam(required = false) UUID contratoId) {
         log.info("http.reputacao.eventos-processados contratoId={}", contratoId);
-        List<EventoProcessado> eventos = contratoId == null
-                ? eventosProcessados.findAll()
-                : eventosProcessados.findByContratoIdOrderByProcessadoEmAsc(contratoId);
-        return eventos.stream().map(EventoProcessadoResponse::de).toList();
+        return eventosProcessados.listar(contratoId);
     }
 
     @GetMapping("/{freelancerId}")
@@ -59,15 +56,6 @@ public class ReputacaoController {
         static ReputacaoResponse de(ReputacaoFreelancer r) {
             return new ReputacaoResponse(r.getFreelancerId(), r.getContratosConcluidos(), r.getContratosCancelados(),
                     r.getValorTotal(), r.getUltimoEventoId(), r.getAtualizadoEm());
-        }
-    }
-
-    public record EventoProcessadoResponse(UUID eventId, String consumidor, String eventType, UUID contratoId,
-                                           String correlationId, Instant processadoEm) {
-
-        static EventoProcessadoResponse de(EventoProcessado e) {
-            return new EventoProcessadoResponse(e.getEventId(), e.getConsumidor(), e.getEventType(),
-                    e.getContratoId(), e.getCorrelationId(), e.getProcessadoEm());
         }
     }
 }

@@ -1,15 +1,13 @@
 package br.com.freela.contrato.infrastructure.outbox;
 
 import br.com.freela.common.correlation.EscopoMdc;
-import br.com.freela.common.correlation.MdcKeys;
 import br.com.freela.common.events.EventoHeaders;
+import br.com.freela.common.kafka.HeadersKafka;
 import br.com.freela.contrato.infrastructure.tracing.ContextoTrace;
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.Headers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -88,7 +86,8 @@ public class PublicadorOutbox {
     }
 
     private boolean publicar(MensagemOutbox mensagem) {
-        try (EscopoMdc escopo = EscopoMdc.de(contextoDeLog(mensagem))) {
+        try (EscopoMdc escopo = EscopoMdc.deEvento(mensagem.getCorrelationId(), mensagem.getEventId(),
+                mensagem.getEventType(), mensagem.getContratoId())) {
             try {
                 contextoTrace.executarNoContexto(
                         mensagem.getTraceparent(),
@@ -124,32 +123,18 @@ public class PublicadorOutbox {
     }
 
     private void adicionarHeaders(ProducerRecord<String, String> registro, MensagemOutbox mensagem) {
-        header(registro, EventoHeaders.EVENT_ID, String.valueOf(mensagem.getEventId()));
-        header(registro, EventoHeaders.EVENT_TYPE, mensagem.getEventType());
-        header(registro, EventoHeaders.EVENT_VERSION, String.valueOf(mensagem.getEventVersion()));
-        header(registro, EventoHeaders.CONTRATO_ID, String.valueOf(mensagem.getContratoId()));
-        header(registro, EventoHeaders.CORRELATION_ID, mensagem.getCorrelationId());
-        header(registro, EventoHeaders.OCCURRED_AT, String.valueOf(mensagem.getOccurredAt()));
-        header(registro, EventoHeaders.PRODUCER, "contrato-service");
+        Headers headers = registro.headers();
+        HeadersKafka.escrever(headers, EventoHeaders.EVENT_ID, mensagem.getEventId());
+        HeadersKafka.escrever(headers, EventoHeaders.EVENT_TYPE, mensagem.getEventType());
+        HeadersKafka.escrever(headers, EventoHeaders.EVENT_VERSION, mensagem.getEventVersion());
+        HeadersKafka.escrever(headers, EventoHeaders.CONTRATO_ID, mensagem.getContratoId());
+        HeadersKafka.escrever(headers, EventoHeaders.CORRELATION_ID, mensagem.getCorrelationId());
+        HeadersKafka.escrever(headers, EventoHeaders.OCCURRED_AT, mensagem.getOccurredAt());
+        HeadersKafka.escrever(headers, EventoHeaders.PRODUCER, RegistroDeEventosOutbox.PRODUTOR);
         // Com tracing ativo o proprio Spring Kafka injeta o traceparent do span corrente.
         // O header manual cobre o cenario sem tracing, para que o correlacionamento nao dependa dele.
         if (!contextoTrace.tracingAtivo()) {
-            header(registro, EventoHeaders.TRACEPARENT, mensagem.getTraceparent());
+            HeadersKafka.escrever(headers, EventoHeaders.TRACEPARENT, mensagem.getTraceparent());
         }
-    }
-
-    private void header(ProducerRecord<String, String> registro, String nome, String valor) {
-        if (valor != null && !"null".equals(valor)) {
-            registro.headers().add(nome, valor.getBytes(StandardCharsets.UTF_8));
-        }
-    }
-
-    private Map<String, String> contextoDeLog(MensagemOutbox mensagem) {
-        Map<String, String> valores = new LinkedHashMap<>();
-        valores.put(MdcKeys.CORRELATION_ID, mensagem.getCorrelationId());
-        valores.put(MdcKeys.EVENT_ID, String.valueOf(mensagem.getEventId()));
-        valores.put(MdcKeys.EVENT_TYPE, mensagem.getEventType());
-        valores.put(MdcKeys.CONTRATO_ID, String.valueOf(mensagem.getContratoId()));
-        return valores;
     }
 }

@@ -29,7 +29,8 @@ public class RegistroDeEventosOutbox implements RegistroDeEventos {
 
     private static final Logger log = LoggerFactory.getLogger(RegistroDeEventosOutbox.class);
     private static final String AGGREGATE_TYPE = "Contrato";
-    private static final String PRODUTOR = "contrato-service";
+    /** Vai no campo {@code producer} do envelope e no header de mesmo nome. */
+    static final String PRODUTOR = "contrato-service";
 
     private final MensagemOutboxRepository repository;
     private final EventoJson json;

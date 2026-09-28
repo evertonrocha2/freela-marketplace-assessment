@@ -4,9 +4,9 @@ import br.com.freela.common.correlation.EscopoMdc;
 import br.com.freela.common.events.EventoHeaders;
 import br.com.freela.common.events.KafkaTopicos;
 import br.com.freela.common.kafka.HeadersKafka;
-import java.nio.ByteBuffer;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.Headers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -50,33 +50,29 @@ public class DltListener {
             containerFactory = DltConsumidorConfig.FACTORY)
     @Transactional
     public void onMensagemComErro(ConsumerRecord<String, String> registro) {
-        try (EscopoMdc escopo = EscopoMdc.de(HeadersKafka.mdc(registro))) {
-            String topicoOriginal = HeadersKafka.ler(registro.headers(), KafkaHeaders.DLT_ORIGINAL_TOPIC);
-            Integer particaoOriginal = inteiro(registro, KafkaHeaders.DLT_ORIGINAL_PARTITION);
-            Long offsetOriginal = longo(registro, KafkaHeaders.DLT_ORIGINAL_OFFSET);
-            String grupoConsumidor = HeadersKafka.ler(registro.headers(), KafkaHeaders.DLT_ORIGINAL_CONSUMER_GROUP);
-            if (topicoOriginal != null && particaoOriginal != null && offsetOriginal != null && grupoConsumidor != null
-                    && repository.existsByTopicoOriginalAndParticaoOriginalAndOffsetOriginalAndGrupoConsumidor(
-                            topicoOriginal, particaoOriginal, offsetOriginal, grupoConsumidor)) {
+        try (EscopoMdc escopo = HeadersKafka.escopoDeLog(registro)) {
+            Headers headers = registro.headers();
+            String topicoOriginal = HeadersKafka.ler(headers, KafkaHeaders.DLT_ORIGINAL_TOPIC);
+            Integer particaoOriginal = HeadersKafka.lerInt(headers, KafkaHeaders.DLT_ORIGINAL_PARTITION);
+            Long offsetOriginal = HeadersKafka.lerLong(headers, KafkaHeaders.DLT_ORIGINAL_OFFSET);
+            String grupoConsumidor = HeadersKafka.ler(headers, KafkaHeaders.DLT_ORIGINAL_CONSUMER_GROUP);
+            if (jaRegistrada(topicoOriginal, particaoOriginal, offsetOriginal, grupoConsumidor)) {
                 log.info("dlt.mensagem.duplicada topicoOriginal={} particaoOriginal={} offsetOriginal={} grupoConsumidor={} acao=ignorada",
                         topicoOriginal, particaoOriginal, offsetOriginal, grupoConsumidor);
                 return;
             }
 
-            String eventIdBruto = HeadersKafka.ler(registro.headers(), EventoHeaders.EVENT_ID);
-            String contratoIdBruto = HeadersKafka.ler(registro.headers(), EventoHeaders.CONTRATO_ID);
-
             EventoFalha falha = new EventoFalha(
-                    paraUuid(eventIdBruto),
-                    HeadersKafka.ler(registro.headers(), EventoHeaders.EVENT_TYPE),
-                    paraUuid(contratoIdBruto),
-                    HeadersKafka.ler(registro.headers(), EventoHeaders.CORRELATION_ID),
+                    paraUuid(HeadersKafka.ler(headers, EventoHeaders.EVENT_ID)),
+                    HeadersKafka.ler(headers, EventoHeaders.EVENT_TYPE),
+                    paraUuid(HeadersKafka.ler(headers, EventoHeaders.CONTRATO_ID)),
+                    HeadersKafka.ler(headers, EventoHeaders.CORRELATION_ID),
                     topicoOriginal,
                     particaoOriginal,
                     offsetOriginal,
                     grupoConsumidor,
-                    HeadersKafka.ler(registro.headers(), KafkaHeaders.DLT_EXCEPTION_FQCN),
-                    HeadersKafka.ler(registro.headers(), KafkaHeaders.DLT_EXCEPTION_MESSAGE),
+                    HeadersKafka.ler(headers, KafkaHeaders.DLT_EXCEPTION_FQCN),
+                    HeadersKafka.ler(headers, KafkaHeaders.DLT_EXCEPTION_MESSAGE),
                     registro.key(),
                     registro.value());
             repository.save(falha);
@@ -87,28 +83,18 @@ public class DltListener {
         }
     }
 
+    /** A mesma copia entregue de novo. Sem os headers de origem nao ha como reconhecer, e ela e registrada. */
+    private boolean jaRegistrada(String topico, Integer particao, Long offset, String grupo) {
+        return topico != null && particao != null && offset != null && grupo != null
+                && repository.existsByTopicoOriginalAndParticaoOriginalAndOffsetOriginalAndGrupoConsumidor(
+                        topico, particao, offset, grupo);
+    }
+
     private static UUID paraUuid(String valor) {
         try {
             return valor == null ? null : UUID.fromString(valor);
         } catch (IllegalArgumentException e) {
             return null;
         }
-    }
-
-    /** Spring Kafka grava esses headers como inteiros binarios, nao como texto. */
-    private static Integer inteiro(ConsumerRecord<String, String> registro, String nome) {
-        var header = registro.headers().lastHeader(nome);
-        if (header == null || header.value() == null || header.value().length < Integer.BYTES) {
-            return null;
-        }
-        return ByteBuffer.wrap(header.value()).getInt();
-    }
-
-    private static Long longo(ConsumerRecord<String, String> registro, String nome) {
-        var header = registro.headers().lastHeader(nome);
-        if (header == null || header.value() == null || header.value().length < Long.BYTES) {
-            return null;
-        }
-        return ByteBuffer.wrap(header.value()).getLong();
     }
 }

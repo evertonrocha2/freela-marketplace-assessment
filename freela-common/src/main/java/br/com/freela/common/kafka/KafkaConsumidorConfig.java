@@ -2,11 +2,9 @@ package br.com.freela.common.kafka;
 
 import br.com.freela.common.events.EventoHeaders;
 import br.com.freela.common.events.KafkaTopicos;
-import java.nio.charset.StandardCharsets;
 import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaOperations;
@@ -34,7 +32,6 @@ import tools.jackson.core.JacksonException;
  * mesmo erro. Vao direto para o DLT.</p>
  */
 @Configuration
-@ConditionalOnProperty(name = "freela.kafka.consumidor.habilitado", havingValue = "true", matchIfMissing = true)
 public class KafkaConsumidorConfig {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaConsumidorConfig.class);
@@ -46,8 +43,8 @@ public class KafkaConsumidorConfig {
                 (registro, excecao) -> {
                     log.error("kafka.consumo.dlt topicoOrigem={} particao={} offset={} eventId={} contratoId={} erro={}",
                             registro.topic(), registro.partition(), registro.offset(),
-                            header(registro.headers(), EventoHeaders.EVENT_ID),
-                            header(registro.headers(), EventoHeaders.CONTRATO_ID),
+                            HeadersKafka.ler(registro.headers(), EventoHeaders.EVENT_ID),
+                            HeadersKafka.ler(registro.headers(), EventoHeaders.CONTRATO_ID),
                             excecao.getMessage(), excecao);
                     return new TopicPartition(KafkaTopicos.CONTRATOS_EVENTOS_DLT, registro.partition());
                 });
@@ -63,12 +60,7 @@ public class KafkaConsumidorConfig {
         handler.setRetryListeners((registro, excecao, tentativa) ->
                 log.warn("kafka.consumo.retentativa tentativa={} topico={} particao={} offset={} eventId={} erro={}",
                         tentativa, registro.topic(), registro.partition(), registro.offset(),
-                        header(registro.headers(), EventoHeaders.EVENT_ID), excecao.getMessage()));
+                        HeadersKafka.ler(registro.headers(), EventoHeaders.EVENT_ID), excecao.getMessage()));
         return handler;
-    }
-
-    private static String header(org.apache.kafka.common.header.Headers headers, String nome) {
-        var header = headers.lastHeader(nome);
-        return header == null ? null : new String(header.value(), StandardCharsets.UTF_8);
     }
 }

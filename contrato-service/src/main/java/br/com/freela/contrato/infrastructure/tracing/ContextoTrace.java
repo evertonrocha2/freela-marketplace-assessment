@@ -1,5 +1,6 @@
 package br.com.freela.contrato.infrastructure.tracing;
 
+import br.com.freela.common.events.EventoHeaders;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
@@ -28,8 +29,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class ContextoTrace {
 
-    private static final String TRACEPARENT = "traceparent";
-
     private final ObjectProvider<Tracer> tracerProvider;
     private final ObjectProvider<Propagator> propagatorProvider;
 
@@ -51,7 +50,7 @@ public class ContextoTrace {
         }
         Map<String, String> portador = new HashMap<>();
         propagator.inject(atual.context(), portador, Map::put);
-        return portador.get(TRACEPARENT);
+        return portador.get(EventoHeaders.TRACEPARENT);
     }
 
     /**
@@ -64,7 +63,7 @@ public class ContextoTrace {
         if (tracer == null || propagator == null || traceparent == null || traceparent.isBlank()) {
             return acao.get();
         }
-        Map<String, String> portador = Map.of(TRACEPARENT, traceparent);
+        Map<String, String> portador = Map.of(EventoHeaders.TRACEPARENT, traceparent);
         Span span = propagator.extract(portador, Map::get).name(nomeSpan).start();
         try (Tracer.SpanInScope escopo = tracer.withSpan(span)) {
             return acao.get();

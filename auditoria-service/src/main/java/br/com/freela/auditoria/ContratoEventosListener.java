@@ -15,7 +15,7 @@ public class ContratoEventosListener extends ConsumidorDeEventos {
     private final AuditoriaService service;
 
     public ContratoEventosListener(EventoJson json, AuditoriaService service) {
-        super(json, "auditoria-service");
+        super(json, AuditoriaService.CONSUMIDOR);
         this.service = service;
     }
 

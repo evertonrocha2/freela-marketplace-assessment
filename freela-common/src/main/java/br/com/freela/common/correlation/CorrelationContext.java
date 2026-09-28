@@ -7,12 +7,16 @@ import org.slf4j.MDC;
 public final class CorrelationContext {
 
     public static String atualOuNovo() {
-        String atual = MDC.get(MdcKeys.CORRELATION_ID);
-        return (atual == null || atual.isBlank()) ? UUID.randomUUID().toString() : atual;
+        return ouNovo(atual());
     }
 
     public static String atual() {
         return MDC.get(MdcKeys.CORRELATION_ID);
+    }
+
+    /** O proprio valor, ou um UUID novo quando ele vier vazio. */
+    public static String ouNovo(String correlationId) {
+        return (correlationId == null || correlationId.isBlank()) ? UUID.randomUUID().toString() : correlationId;
     }
 
     private CorrelationContext() {

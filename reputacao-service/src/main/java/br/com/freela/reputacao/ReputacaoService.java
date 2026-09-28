@@ -6,6 +6,7 @@ import br.com.freela.common.events.EventoTipos;
 import br.com.freela.common.idempotency.ControleIdempotencia;
 import br.com.freela.common.json.EventoJson;
 import br.com.freela.common.kafka.ResultadoConsumo;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReputacaoService {
 
     private static final Logger log = LoggerFactory.getLogger(ReputacaoService.class);
-    private static final String CONSUMIDOR = "reputacao-service";
+    /** Nome do consumidor: vai para os logs de consumo e para a chave de idempotencia. */
+    static final String CONSUMIDOR = "reputacao-service";
+    /** So conclusao e cancelamento mudam os numeros do freelancer. */
+    private static final Set<String> TIPOS_COM_IMPACTO =
+            Set.of(EventoTipos.CONTRATO_CONCLUIDO, EventoTipos.CONTRATO_CANCELADO);
 
     private final ReputacaoRepository repository;
     private final CriadorDeReputacao criador;
@@ -41,7 +46,7 @@ public class ReputacaoService {
 
     @Transactional
     public ResultadoConsumo processar(EventoEnvelope envelope) {
-        if (!interessa(envelope.eventType())) {
+        if (!TIPOS_COM_IMPACTO.contains(envelope.eventType())) {
             log.info("reputacao.evento.ignorado eventType={} contratoId={} motivo=sem-impacto-na-reputacao",
                     envelope.eventType(), envelope.contratoId());
             return ResultadoConsumo.IGNORADO_POR_TIPO;
@@ -90,9 +95,5 @@ public class ReputacaoService {
             return repository.buscarParaAtualizar(freelancerId).orElseThrow(() ->
                     new IllegalStateException("reputacao nao encontrada apos criacao: " + freelancerId));
         });
-    }
-
-    private boolean interessa(String eventType) {
-        return EventoTipos.CONTRATO_CONCLUIDO.equals(eventType) || EventoTipos.CONTRATO_CANCELADO.equals(eventType);
     }
 }

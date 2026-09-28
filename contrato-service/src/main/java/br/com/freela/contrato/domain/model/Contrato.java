@@ -80,10 +80,7 @@ public class Contrato {
     }
 
     public void cancelar(String motivo) {
-        if (status == StatusContrato.CONCLUIDO) {
-            throw new TransicaoInvalidaException(id, status, StatusContrato.CANCELADO);
-        }
-        if (status == StatusContrato.CANCELADO) {
+        if (status == StatusContrato.CONCLUIDO || status == StatusContrato.CANCELADO) {
             throw new TransicaoInvalidaException(id, status, StatusContrato.CANCELADO);
         }
         status = StatusContrato.CANCELADO;

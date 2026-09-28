@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: contrato-service
+  config:
+    # Tracing comum a todas as aplicacoes (freela-observability).
+    import: classpath:freela/observabilidade.yml
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/contrato_db}
     username: ${DB_USER:freela}
@@ -31,7 +34,9 @@ spring:
         max.in.flight.requests.per.connection: 5
         delivery.timeout.ms: 30000
         request.timeout.ms: 10000
-        linger.ms: 5
+        # O relay envia uma mensagem por vez e espera o ack antes da proxima, entao nao ha lote a
+        # formar: esperar so atrasaria cada envio. Precisa ser explicito, o padrao do cliente e 5.
+        linger.ms: 0
     template:
       # Liga a instrumentacao de observabilidade do KafkaTemplate: cria o span de producer e injeta
       # os headers de trace na mensagem.
@@ -52,17 +57,6 @@ management:
   endpoint:
     health:
       show-details: always
-  tracing:
-    sampling:
-      # 100% em ambiente de avaliacao: todo fluxo precisa aparecer no Zipkin.
-      probability: 1.0
-    propagation:
-      type: w3c
-    export:
-      zipkin:
-        # Nome da propriedade no Spring Boot 4. O antigo management.zipkin.tracing.endpoint nao e
-        # mais lido, e com ele a variavel ZIPKIN_URL era ignorada sem aviso.
-        endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
 
 eureka:
   client:

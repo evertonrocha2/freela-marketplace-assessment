@@ -24,7 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificacaoService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificacaoService.class);
-    private static final String CONSUMIDOR = "notificacao-service";
+    /** Nome do consumidor: vai para os logs de consumo e para a chave de idempotencia. */
+    static final String CONSUMIDOR = "notificacao-service";
 
     private final NotificacaoRepository repository;
     private final ControleIdempotencia idempotencia;
@@ -38,7 +39,7 @@ public class NotificacaoService {
 
     @Transactional
     public ResultadoConsumo processar(EventoEnvelope envelope) {
-        if (!interessa(envelope.eventType())) {
+        if (!EventoTipos.TODOS.contains(envelope.eventType())) {
             log.info("notificacao.evento.ignorado eventType={} contratoId={}",
                     envelope.eventType(), envelope.contratoId());
             return ResultadoConsumo.IGNORADO_POR_TIPO;
@@ -67,13 +68,6 @@ public class NotificacaoService {
         log.info("notificacao.registro.sucesso notificacaoId={} eventId={} contratoId={} destinatarioId={} resultado=CRIADA",
                 notificacao.getId(), envelope.eventId(), envelope.contratoId(), destinatario);
         return ResultadoConsumo.APLICADO;
-    }
-
-    private boolean interessa(String eventType) {
-        return EventoTipos.CONTRATO_CRIADO.equals(eventType)
-                || EventoTipos.ENTREGA_REGISTRADA.equals(eventType)
-                || EventoTipos.CONTRATO_CONCLUIDO.equals(eventType)
-                || EventoTipos.CONTRATO_CANCELADO.equals(eventType);
     }
 
     /** Quem precisa saber do que aconteceu: a entrega avisa o cliente, o resto avisa o freelancer. */

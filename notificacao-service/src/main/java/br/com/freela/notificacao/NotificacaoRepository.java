@@ -9,6 +9,4 @@ public interface NotificacaoRepository extends JpaRepository<Notificacao, UUID> 
     List<Notificacao> findByContratoIdOrderByCriadaEmAsc(UUID contratoId);
 
     List<Notificacao> findByCorrelationIdOrderByCriadaEmAsc(String correlationId);
-
-    List<Notificacao> findByEventId(UUID eventId);
 }

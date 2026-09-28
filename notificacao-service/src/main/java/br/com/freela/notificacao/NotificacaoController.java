@@ -1,7 +1,7 @@
 package br.com.freela.notificacao;
 
-import br.com.freela.common.idempotency.EventoProcessado;
 import br.com.freela.common.idempotency.EventoProcessadoRepository;
+import br.com.freela.common.idempotency.EventoProcessadoResponse;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -45,10 +45,7 @@ public class NotificacaoController {
     @GetMapping("/eventos-processados")
     public List<EventoProcessadoResponse> eventosProcessados(@RequestParam(required = false) UUID contratoId) {
         log.info("http.notificacao.eventos-processados contratoId={}", contratoId);
-        List<EventoProcessado> eventos = contratoId == null
-                ? eventosProcessados.findAll()
-                : eventosProcessados.findByContratoIdOrderByProcessadoEmAsc(contratoId);
-        return eventos.stream().map(EventoProcessadoResponse::de).toList();
+        return eventosProcessados.listar(contratoId);
     }
 
     public record NotificacaoResponse(UUID id, UUID contratoId, UUID destinatarioId, String tipo, String mensagem,
@@ -57,15 +54,6 @@ public class NotificacaoController {
         static NotificacaoResponse de(Notificacao n) {
             return new NotificacaoResponse(n.getId(), n.getContratoId(), n.getDestinatarioId(), n.getTipo(),
                     n.getMensagem(), n.getEventId(), n.getCorrelationId(), n.getCriadaEm());
-        }
-    }
-
-    public record EventoProcessadoResponse(UUID eventId, String consumidor, String eventType, UUID contratoId,
-                                           String correlationId, Instant processadoEm) {
-
-        static EventoProcessadoResponse de(EventoProcessado e) {
-            return new EventoProcessadoResponse(e.getEventId(), e.getConsumidor(), e.getEventType(),
-                    e.getContratoId(), e.getCorrelationId(), e.getProcessadoEm());
         }
     }
 }

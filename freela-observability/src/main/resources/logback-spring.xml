@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Configuracao de log de todas as aplicacoes. Vem neste modulo, que todas tem no classpath, para
+  nao repetir o mesmo arquivo em cada servico. Os testes usam o proprio logback-test.xml, que o
+  Logback carrega antes deste.
+-->
 <configuration>
     <!-- APP_NAME vira o label "service" no Loki e o nome do arquivo em logs/. -->
     <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="aplicacao"/>

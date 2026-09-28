@@ -179,7 +179,7 @@ O consumidor chama `ControleIdempotencia.registrarSeInedito` como primeira linha
 ```java
 @Transactional
 public ResultadoConsumo processar(EventoEnvelope envelope) {
-    if (!interessa(envelope.eventType())) return IGNORADO_POR_TIPO;
+    if (!TIPOS_TRATADOS.contains(envelope.eventType())) return IGNORADO_POR_TIPO;
     if (!idempotencia.registrarSeInedito(envelope, CONSUMIDOR)) return DUPLICADO_IGNORADO;
     // ... efeito de negócio ...
     return APLICADO;

@@ -1,15 +1,11 @@
 package br.com.freela.auditoria;
 
-import br.com.freela.common.events.EventoHeaders;
 import br.com.freela.common.events.KafkaTopicos;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,13 +21,13 @@ public class AuditoriaController {
 
     private final EventoAuditoriaRepository repository;
     private final EventoFalhaRepository falhaRepository;
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final ReprocessadorDeFalhas reprocessador;
 
     public AuditoriaController(EventoAuditoriaRepository repository, EventoFalhaRepository falhaRepository,
-                               KafkaTemplate<String, String> kafkaTemplate) {
+                               ReprocessadorDeFalhas reprocessador) {
         this.repository = repository;
         this.falhaRepository = falhaRepository;
-        this.kafkaTemplate = kafkaTemplate;
+        this.reprocessador = reprocessador;
     }
 
     @GetMapping
@@ -68,38 +64,13 @@ public class AuditoriaController {
         return falhas.stream().map(EventoFalhaResponse::de).toList();
     }
 
-    /**
-     * Reenvia uma mensagem do DLT para o topico principal.
-     *
-     * <p>Os consumidores que ja tinham processado o evento antes da falha o descartam pela
-     * idempotencia; o que falhou tenta de novo. E por isso que reprocessar e uma operacao segura
-     * aqui, e nao algo que precise de intervencao manual em cada servico.</p>
-     */
+    /** Reenvia uma mensagem do DLT para o topico principal (ver {@link ReprocessadorDeFalhas}). */
     @PostMapping("/falhas/{id}/reprocessar")
     public EventoFalhaResponse reprocessar(@PathVariable UUID id) {
-        EventoFalha falha = falhaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Falha não encontrada: " + id));
-
-        ProducerRecord<String, String> registro = new ProducerRecord<>(
-                KafkaTopicos.CONTRATOS_EVENTOS, null, falha.getChave(), falha.getPayload());
-        header(registro, EventoHeaders.EVENT_ID, String.valueOf(falha.getEventId()));
-        header(registro, EventoHeaders.EVENT_TYPE, falha.getEventType());
-        header(registro, EventoHeaders.CONTRATO_ID, String.valueOf(falha.getContratoId()));
-        header(registro, EventoHeaders.CORRELATION_ID, falha.getCorrelationId());
-        header(registro, EventoHeaders.PRODUCER, "auditoria-service/reprocessamento");
-        kafkaTemplate.send(registro);
-
-        falha.marcarReenviado();
-        falhaRepository.save(falha);
+        EventoFalha falha = reprocessador.reprocessar(id);
         log.warn("dlt.mensagem.reprocessada falhaId={} eventId={} contratoId={} topicoDestino={}",
                 falha.getId(), falha.getEventId(), falha.getContratoId(), KafkaTopicos.CONTRATOS_EVENTOS);
         return EventoFalhaResponse.de(falha);
-    }
-
-    private void header(ProducerRecord<String, String> registro, String nome, String valor) {
-        if (valor != null && !"null".equals(valor)) {
-            registro.headers().add(nome, valor.getBytes(StandardCharsets.UTF_8));
-        }
     }
 
     public record EventoAuditoriaResponse(UUID id, UUID eventId, String eventType, int eventVersion,
