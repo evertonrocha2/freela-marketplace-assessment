@@ -126,13 +126,17 @@ O `contrato-service` utiliza uma organização inspirada em Domain-Driven Design
 contrato-service
 └── src/main/java/br/com/freela/contrato
     ├── application
+    │   └── port
     ├── domain
     │   ├── event
     │   ├── model
     │   ├── repository
     │   └── shared
     └── infrastructure
+        ├── kafka
+        ├── outbox
         ├── persistence
+        ├── tracing
         └── web
 ```
 
