@@ -21,23 +21,9 @@ public record ContratoEventoPayload(
         String status,
         String motivo) {
 
-    /** Valida os campos marcados como obrigatorios na especificacao. So {@code motivo} e opcional. */
     public ContratoEventoPayload {
-        exigir(contratoId, "contratoId");
-        exigir(clienteId, "clienteId");
-        exigir(freelancerId, "freelancerId");
-        exigir(valor, "valor");
-        if (titulo == null || titulo.isBlank()) {
-            throw new IllegalArgumentException("titulo e obrigatorio no payload");
-        }
-        if (status == null || status.isBlank()) {
-            throw new IllegalArgumentException("status e obrigatorio no payload");
-        }
-    }
-
-    private static void exigir(Object valor, String campo) {
-        if (valor == null) {
-            throw new IllegalArgumentException(campo + " e obrigatorio no payload");
+        if (contratoId == null) {
+            throw new IllegalArgumentException("contratoId e obrigatorio no payload");
         }
     }
 }

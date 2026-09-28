@@ -9,7 +9,4 @@ public interface EventoFalhaRepository extends JpaRepository<EventoFalha, UUID> 
     List<EventoFalha> findByContratoIdOrderByRecebidoEmAsc(UUID contratoId);
 
     List<EventoFalha> findByCorrelationIdOrderByRecebidoEmAsc(String correlationId);
-
-    boolean existsByTopicoOriginalAndParticaoOriginalAndOffsetOriginalAndGrupoConsumidor(
-            String topicoOriginal, Integer particaoOriginal, Long offsetOriginal, String grupoConsumidor);
 }

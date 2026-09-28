@@ -6,10 +6,8 @@ import br.com.freela.common.events.EventoTipos;
 import br.com.freela.common.idempotency.ControleIdempotencia;
 import br.com.freela.common.json.EventoJson;
 import br.com.freela.common.kafka.ResultadoConsumo;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,14 +25,11 @@ public class ReputacaoService {
     private static final String CONSUMIDOR = "reputacao-service";
 
     private final ReputacaoRepository repository;
-    private final CriadorDeReputacao criador;
     private final ControleIdempotencia idempotencia;
     private final EventoJson json;
 
-    public ReputacaoService(ReputacaoRepository repository, CriadorDeReputacao criador,
-                            ControleIdempotencia idempotencia, EventoJson json) {
+    public ReputacaoService(ReputacaoRepository repository, ControleIdempotencia idempotencia, EventoJson json) {
         this.repository = repository;
-        this.criador = criador;
         this.idempotencia = idempotencia;
         this.json = json;
     }
@@ -57,7 +52,8 @@ public class ReputacaoService {
                 envelope.eventId(), envelope.eventType(), envelope.contratoId(),
                 payload.freelancerId(), payload.valor());
 
-        ReputacaoFreelancer reputacao = travarReputacao(payload.freelancerId());
+        ReputacaoFreelancer reputacao = repository.findById(payload.freelancerId())
+                .orElseGet(() -> new ReputacaoFreelancer(payload.freelancerId()));
 
         if (EventoTipos.CONTRATO_CONCLUIDO.equals(envelope.eventType())) {
             reputacao.registrarConclusao(payload.valor(), envelope.eventId());
@@ -70,26 +66,6 @@ public class ReputacaoService {
                 envelope.eventId(), envelope.contratoId(), reputacao.getFreelancerId(),
                 reputacao.getContratosConcluidos(), reputacao.getContratosCancelados(), reputacao.getValorTotal());
         return ResultadoConsumo.APLICADO;
-    }
-
-    /**
-     * Devolve a reputacao do freelancer ja travada para escrita, criando o registro se preciso.
-     *
-     * <p>Se outra thread criar o registro no mesmo instante, a insercao daqui falha com violacao de
-     * chave. Isso e esperado e nao e erro: basta ler de novo, agora com a linha existindo, e a
-     * trava garante que os dois incrementos sejam aplicados um depois do outro.</p>
-     */
-    private ReputacaoFreelancer travarReputacao(UUID freelancerId) {
-        return repository.buscarParaAtualizar(freelancerId).orElseGet(() -> {
-            try {
-                criador.criarSeAusente(freelancerId);
-            } catch (DataIntegrityViolationException corrida) {
-                log.info("reputacao.criacao.concorrente freelancerId={} acao=reler-registro-criado-por-outra-thread",
-                        freelancerId);
-            }
-            return repository.buscarParaAtualizar(freelancerId).orElseThrow(() ->
-                    new IllegalStateException("reputacao nao encontrada apos criacao: " + freelancerId));
-        });
     }
 
     private boolean interessa(String eventType) {

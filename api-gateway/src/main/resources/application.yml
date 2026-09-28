@@ -3,11 +3,6 @@ server:
 spring:
   application:
     name: api-gateway
-  reactor:
-    # Em WebFlux uma requisicao troca de thread varias vezes. Com "auto", o contexto de trace e
-    # restaurado na thread que estiver executando cada etapa, e as linhas de log do gateway saem
-    # com traceId como as dos outros servicos.
-    context-propagation: auto
   cloud:
     gateway:
       server:
@@ -42,11 +37,9 @@ management:
       probability: 1.0
     propagation:
       type: w3c
-    export:
-      zipkin:
-        # Nome da propriedade no Spring Boot 4. O antigo management.zipkin.tracing.endpoint nao e
-        # mais lido, e com ele a variavel ZIPKIN_URL era ignorada sem aviso.
-        endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
 eureka:
   client:
     service-url:

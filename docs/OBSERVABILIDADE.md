@@ -134,9 +134,7 @@ já vem provisionado, com campos para `correlationId`, `contratoId` e `eventId`.
 
 Uma consulta por `correlationId` devolve a operação inteira em ordem cronológica, do
 `gateway.request.inicio` até o `kafka.consumo.fim` do último consumidor, sem abrir o console de
-nenhuma aplicação. Os identificadores acima são da execução versionada em `evidencias/`: a
-resposta do Loki para a primeira consulta está em `evidencias/loki-20260928-143312.json`, com 78
-linhas de cinco serviços.
+nenhuma aplicação. Os identificadores acima são de uma execução de exemplo.
 
 O datasource do Loki tem um *derived field* sobre `traceId`: o campo vira link direto para o trace
 no Zipkin.
@@ -203,9 +201,8 @@ A ponte é feita pela própria propagação W3C, em `ContextoTrace`:
 
 ### Resultado
 
-O trace abaixo foi devolvido pelo Zipkin na execução de `scripts/evidencias.sh`, buscando pela tag
-`correlationId`. A resposta completa da API está em
-`evidencias/zipkin-20260928-143312.json`. É a requisição de conclusão do contrato:
+O trace abaixo foi devolvido pelo Zipkin numa execução de exemplo, buscando pela tag
+`correlationId`. É a requisição de conclusão do contrato:
 
 ```text
 traceId = 6abaa4d9d6cde62c24b08f0d0ec28e09

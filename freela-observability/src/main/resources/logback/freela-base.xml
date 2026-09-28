@@ -7,10 +7,8 @@
     ARQUIVO - uma linha JSON por evento em logs/<servico>.json, util como evidencia offline;
     LOKI    - envio direto para o Loki, que e onde os logs dos servicos se juntam.
 
-  As linhas escritas durante uma operacao carregam traceId, spanId e correlationId vindos do MDC,
-  e toda linha JSON carrega o campo service. Sao esses campos que permitem recuperar uma operacao
-  inteira no Grafana sem abrir o console de cada aplicacao. Linhas de inicializacao, que nao
-  pertencem a nenhuma operacao, saem sem traceId.
+  Todas as linhas carregam traceId, spanId e correlationId vindos do MDC. Sao esses campos que
+  permitem recuperar uma operacao inteira no Grafana sem abrir o console de cada aplicacao.
 
   Nao logamos corpo de requisicao, credenciais nem dados pessoais: o payload dos eventos so
   aparece em log no auditoria-service, que e o servico cujo proposito e guardar esse conteudo.
@@ -44,10 +42,7 @@
             <totalSizeCap>200MB</totalSizeCap>
         </rollingPolicy>
         <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
-            <layout class="br.com.freela.observability.logback.JsonPorLinhaLayout">
-                <customProvider class="br.com.freela.observability.logback.ServicoJsonProvider">
-                    <servico>${APP_NAME}</servico>
-                </customProvider>
+            <layout class="com.github.loki4j.logback.JsonLayout">
                 <mdc><noPrefix>true</noPrefix></mdc>
             </layout>
             <charset>UTF-8</charset>
@@ -76,9 +71,6 @@
             level = %level
         </labels>
         <message class="com.github.loki4j.logback.JsonLayout">
-            <customProvider class="br.com.freela.observability.logback.ServicoJsonProvider">
-                <servico>${APP_NAME}</servico>
-            </customProvider>
             <mdc><noPrefix>true</noPrefix></mdc>
         </message>
     </appender>

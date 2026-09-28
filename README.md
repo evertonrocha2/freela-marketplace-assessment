@@ -465,27 +465,11 @@ mvn test
 
 ## Evidências
 
-```bash
-bash scripts/evidencias.sh
-```
-
-Roda o roteiro completo e grava a saída em `evidencias/evidencias-<timestamp>.txt`: requisição pelo
-gateway, persistência, gravação na outbox, publicação no Kafka, consumo pelos três serviços,
-reentrega de mensagem duplicada, ordenação com vários contratos em paralelo, mensagem inválida
-indo para o dead letter topic e o reprocessamento dela, e a mesma operação consultada no Loki e
-no Zipkin. As respostas do Loki e do Zipkin são gravadas ao lado, em `loki-<timestamp>.json` e
-`zipkin-<timestamp>.json`.
-
-Se Loki ou Zipkin estiverem em outro endereço, passe `LOKI` e `ZIPKIN`:
-
-```bash
-LOKI=http://localhost:3100 ZIPKIN=http://localhost:9411 bash scripts/evidencias.sh
-```
-
-A execução versionada em `evidencias/` é a de 28/09/2026 14:33. O que cada arquivo comprova está
-no topo de [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md).
-
-O passo a passo manual equivalente está em [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md).
+O roteiro para reproduzir cada evidência pedida no enunciado, com os comandos e o que cada um
+comprova, está em [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md): requisição pelo gateway, persistência,
+gravação na outbox, publicação no Kafka, consumo pelos três serviços, reentrega de mensagem
+duplicada, ordenação com vários contratos em paralelo, mensagem inválida indo para o dead letter
+topic e o reprocessamento dela, e a mesma operação consultada no Grafana e no Zipkin.
 
 ## Portas
 

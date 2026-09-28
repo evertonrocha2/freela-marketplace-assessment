@@ -25,13 +25,13 @@ Mapa entre o que foi pedido e o que está no código. Os documentos em `docs/` t
 - [x] **Consumidor que escreve em registro de outra chave** — a reputação é do freelancer, não do
       contrato, então dois contratos dele são consumidos em paralelo. Leitura com
       `SELECT ... FOR UPDATE` e criação em transação própria (`CriadorDeReputacao`).
-      `ReputacaoConcorrenciaTest` e a seção 8 de `scripts/evidencias.sh`.
+      `ReputacaoConcorrenciaTest` e a seção 7 de [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md).
 
 ## Duplicidade
 
 - [x] **`eventId` como identificador idempotente** — `ControleIdempotencia` e a tabela
       `eventos_processados`, no banco de cada consumidor.
-- [x] **Demonstração** — `scripts/evidencias.sh`, seção 7; e os testes
+- [x] **Demonstração** — [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md), seção 6; e os testes
       `NotificacaoIdempotenciaTest`, `ReputacaoIdempotenciaTest`, `AuditoriaIdempotenciaTest`.
 
 ## Mensagens transacionais
@@ -53,9 +53,8 @@ Mapa entre o que foi pedido e o que está no código. Os documentos em `docs/` t
       amostragem 100%, propagação W3C, observação ligada no `KafkaTemplate` e nos listeners.
       Endpoint em `management.tracing.export.zipkin.endpoint`, o nome atual no Spring Boot 4.
       `correlationId` e `contratoId` como tags dos spans, para buscar o trace sem saber o traceId.
-- [x] **Fluxo completo a partir de um contrato** — `scripts/evidencias.sh` e
-      [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md). A execução versionada em `evidencias/` inclui as
-      respostas do Loki e do Zipkin.
+- [x] **Fluxo completo a partir de um contrato** — [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md), do
+      gateway até a consulta no Grafana e no Zipkin.
 
 ## Falhas
 
@@ -99,4 +98,4 @@ mvn test        # 38 testes, sem depender da infraestrutura Docker
 | 10 | Tratamento de falhas | [docs/CONFIABILIDADE.md](docs/CONFIABILIDADE.md) §4, DLT e reprocessamento |
 | 11 | Infraestrutura | `infra/docker-compose.yml`. Mantém Postgres, Kafka e Kafka UI da base e acrescenta Zipkin, Loki e Grafana. Eureka e Gateway seguem como aplicações, como vieram na base |
 | 12 | Documentação | `README.md` e `docs/` |
-| 13 | Evidências | `scripts/evidencias.sh`, [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md), execução versionada em `evidencias/` |
+| 13 | Evidências | [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md) |

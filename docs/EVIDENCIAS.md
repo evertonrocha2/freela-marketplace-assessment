@@ -1,39 +1,22 @@
 # Evidências da execução
 
-Todo o roteiro está automatizado em `scripts/evidencias.sh`. Ele imprime na tela e grava três
-arquivos em `evidencias/`:
+Roteiro para reproduzir cada evidência pedida no enunciado. Cada seção diz o que executar e o que
+o resultado comprova.
 
-| Arquivo | Conteúdo |
-|---|---|
-| `evidencias-<timestamp>.txt` | a saída completa do roteiro |
-| `loki-<timestamp>.json` | a resposta da API do Loki para a consulta da operação por `correlationId` |
-| `zipkin-<timestamp>.json` | a resposta da API do Zipkin com os traces da operação |
-
-```bash
-bash scripts/evidencias.sh
-```
-
-A execução versionada no repositório é a de **28/09/2026 14:33**, com `correlationId`
-`demo-20260928-143312`. Os três arquivos dela estão em `evidencias/`, e servem de evidência mesmo
-sem o ambiente no ar.
-
-| Item pedido pelo enunciado | Seção do roteiro | Resultado na execução versionada |
+| Item pedido pelo enunciado | Seção | O que deve aparecer |
 |---|---|---|
 | Requisição recebida pelo API Gateway | 1 | `201 Created` com `X-Correlation-Id` de volta |
 | Alteração persistida no contrato-service | 2 e 3 | contrato em `CONCLUIDO`, três linhas na outbox com `status=PUBLICADO` |
-| Evento publicado no Kafka | 4 | três mensagens na mesma partição, com a chave do contrato e offsets crescentes |
+| Evento publicado no Kafka | 4 | as mensagens do contrato na mesma partição, com a chave do contrato e offsets crescentes |
 | Consumo pelos serviços interessados | 5 | os três consumidores processaram os três eventos |
 | Persistência realizada pelos consumidores | 5 | três notificações, reputação atualizada, três registros de auditoria |
-| Tratamento de mensagem duplicada | 7 | reentrega com o mesmo `eventId`, números antes e depois idênticos |
-| Ordem dos eventos de um mesmo contrato | 8 | cinco contratos em três partições, todos em ordem, reputação do freelancer somada sem perda |
-| Logs da mesma operação, consultados de forma centralizada | 10 | 78 linhas de cinco serviços numa única consulta ao Loki, mais as buscas por `contratoId` e `eventId` |
-| Trace correspondente no Zipkin | 11 | três traces encontrados pela tag `correlationId`, cada um com os cinco serviços |
+| Tratamento de mensagem duplicada | 6 | reentrega com o mesmo `eventId`, números antes e depois idênticos |
+| Ordem dos eventos de um mesmo contrato | 7 | vários contratos em partições diferentes, cada um com os eventos em ordem |
+| Logs da mesma operação, consultados de forma centralizada | 8 | uma única consulta no Grafana traz as linhas dos cinco serviços |
+| Trace correspondente no Zipkin | 9 | o trace com gateway, contrato-service, Kafka e os três consumidores |
 
-A seção 9 cobre o tratamento de falhas: mensagem inválida indo para o DLT, uma falha registrada por
+A seção 10 cobre o tratamento de falhas: mensagem inválida indo para o DLT, uma falha registrada por
 grupo consumidor, e o reprocessamento pela API.
-
-Abaixo, o que cada item pedido pelo enunciado significa aqui e como reproduzi-lo à mão, caso
-prefira conferir passo a passo.
 
 ---
 
@@ -197,7 +180,7 @@ curl "http://localhost:8080/api/reputacoes/eventos-processados?contratoId=${CONT
 
 ## 7. Ordem dos eventos de um mesmo contrato
 
-Crie vários contratos e rode o ciclo completo em todos (a seção 8 do script faz isso com cinco):
+Crie vários contratos e rode o ciclo completo em todos. Depois, para cada um:
 
 ```bash
 curl "http://localhost:8080/api/auditoria?contratoId=${CONTRATO}"
@@ -216,12 +199,11 @@ Complementos:
 - nos logs, `thread=notificacao-contratos-<n>-C-1` mostra threads distintas para partições
   distintas.
 
-No roteiro, os cinco contratos da seção 8 são do **mesmo freelancer** e as cinco conclusões são
-enviadas ao mesmo tempo. Como a partição é escolhida pelo contrato, as conclusões são consumidas em
-paralelo por threads diferentes e disputam o mesmo registro de reputação. A seção termina conferindo
-que o contador do freelancer subiu exatamente cinco. Na execução versionada, os contratos caíram nas
-três partições e o resultado foi `concluidos=5 valorTotal=500.0 [OK]`. O porquê está em
-[CONFIABILIDADE.md](CONFIABILIDADE.md), seção 2.
+Usando o **mesmo freelancer** em todos os contratos e enviando as conclusões ao mesmo tempo, dá para
+ver também a concorrência no `reputacao-service`. Como a partição é escolhida pelo contrato, as
+conclusões são consumidas em paralelo por threads diferentes e disputam o mesmo registro de
+reputação. O contador do freelancer tem que subir exatamente o número de contratos concluídos. O
+porquê está em [CONFIABILIDADE.md](CONFIABILIDADE.md), seção 2.
 
 Os testes automatizados equivalentes são `OutboxKafkaIntegrationTest.ordemPreservadaPorContrato`,
 no `contrato-service`, e `ReputacaoConcorrenciaTest`, no `reputacao-service`.
@@ -256,12 +238,7 @@ reputacao-service    reputacao.atualizacao.sucesso ...
 ```
 
 Sem abrir o console de nenhuma aplicação. A mesma consulta aceita `contratoId` ou `eventId` no
-lugar do `correlationId`, e o roteiro faz as três.
-
-Na execução versionada, a resposta completa do Loki está em
-`evidencias/loki-20260928-143312.json`: 78 linhas de `api-gateway`, `contrato-service`,
-`notificacao-service`, `reputacao-service` e `auditoria-service`, todas com o mesmo
-`correlationId`, e as do mesmo pedido HTTP com o mesmo `traceId`.
+lugar do `correlationId`. As linhas do mesmo pedido HTTP trazem o mesmo `traceId`.
 
 ---
 
@@ -291,8 +268,7 @@ auditoria-service    CONSUMER   freela.contratos.eventos process   grupo=auditor
 ```
 
 Os spans de consumidor trazem grupo, partição e offset como tags, além de `correlationId` e
-`contratoId`. A resposta completa, com os três traces, está em
-`evidencias/zipkin-20260928-143312.json`.
+`contratoId`.
 
 ---
 
@@ -331,8 +307,8 @@ Reprocessamento:
 curl -X POST http://localhost:8080/api/auditoria/falhas/<id>/reprocessar
 ```
 
-A mensagem volta ao tópico principal e é lida de novo pelos três consumidores. No roteiro ela
-continua inválida, então falha outra vez em cada um e volta ao DLT com um offset original novo: o
+A mensagem volta ao tópico principal e é lida de novo pelos três consumidores. Como a do exemplo
+continua inválida, ela falha outra vez em cada um e volta ao DLT com um offset original novo: o
 número de falhas registradas sobe três. Uma mensagem que tivesse falhado por causa transitória
 seria processada nesse reenvio.
 

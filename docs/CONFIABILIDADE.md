@@ -148,9 +148,8 @@ A correção tem duas partes:
   pela outra e segue, sem abortar a transação que carrega o efeito do evento e a marca de
   idempotência.
 
-Evidência reproduzível: seção 8 de `scripts/evidencias.sh` cria cinco contratos do mesmo
-freelancer, conclui os cinco ao mesmo tempo, confere a sequência de eventos registrada pela
-auditoria em cada contrato e confere que a reputação do freelancer subiu exatamente cinco.
+Evidência reproduzível: seção 7 de [EVIDENCIAS.md](EVIDENCIAS.md), com vários contratos do mesmo
+freelancer concluídos ao mesmo tempo. O teste automatizado é `ReputacaoConcorrenciaTest`.
 
 ---
 
@@ -298,8 +297,8 @@ Zipkin: o reenvio é uma operação nova, iniciada por quem chamou a API.
 A mensagem permanece no tópico DLT independentemente disso: o registro em banco existe para dar
 consulta e reenvio, não para substituir o Kafka como fonte.
 
-Evidência reproduzível: seção 9 de `scripts/evidencias.sh` publica uma mensagem inválida, mostra as
-três falhas registradas, uma por grupo, e reprocessa a mais recente pela API.
+Evidência reproduzível: seção 10 de [EVIDENCIAS.md](EVIDENCIAS.md) publica uma mensagem inválida,
+mostra as três falhas registradas, uma por grupo, e reprocessa uma delas pela API.
 
 ### Isolamento
 
