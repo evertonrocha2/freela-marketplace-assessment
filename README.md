@@ -399,39 +399,21 @@ Se a porta 5432 já estiver em uso na sua máquina, suba o Postgres em outra por
 POSTGRES_PORT=5433 docker compose up -d
 ```
 
-Nesse caso passe a mesma porta para as aplicações (`DB_PORT=5433` no script de inicialização).
+Nesse caso aponte as aplicações para a mesma porta pela variável `DB_URL` de cada serviço, por
+exemplo `DB_URL=jdbc:postgresql://localhost:5433/contrato_db` no `contrato-service`.
 
 ## Execução das aplicações
 
 É necessário Java 21. Se houver um JDK mais antigo no `PATH`, aponte `JAVA_HOME` para o 21.
 
-### Com os scripts
+Na primeira vez, instale no repositório Maven local os módulos compartilhados (`freela-common` e
+`freela-observability`), dos quais as aplicações dependem:
 
 ```bash
-mvn -DskipTests package
-bash scripts/subir-aplicacoes.sh
+mvn -DskipTests install
 ```
 
-O script sobe as seis aplicações na ordem de dependência, espera cada uma responder em
-`/actuator/health`, grava os logs de console em `logs/run-<servico>.out` e os PIDs em `logs/pids`.
-
-Para encerrar:
-
-```bash
-bash scripts/parar-aplicacoes.sh
-```
-
-Variáveis aceitas pelo script de inicialização: `DB_PORT`, `KAFKA_BOOTSTRAP_SERVERS`, `ZIPKIN_URL`,
-`LOKI_URL`, `EUREKA_URL` e `PORTA_GATEWAY`, `PORTA_CONTRATO`, `PORTA_NOTIFICACAO`,
-`PORTA_REPUTACAO`, `PORTA_AUDITORIA`, `PORTA_EUREKA`.
-
-```bash
-DB_PORT=5433 PORTA_CONTRATO=8181 bash scripts/subir-aplicacoes.sh
-```
-
-### Módulo a módulo
-
-Cada aplicação também pode ser iniciada isoladamente, um terminal para cada:
+Depois, suba cada aplicação num terminal próprio:
 
 ```bash
 mvn -pl eureka-server spring-boot:run
@@ -444,6 +426,9 @@ mvn -pl auditoria-service spring-boot:run
 
 O `eureka-server` precisa subir primeiro. As primeiras chamadas pelo gateway podem retornar `503`
 enquanto o registro no Eureka não completa, o que leva cerca de 30 segundos.
+
+Os endereços da infraestrutura podem ser trocados por variáveis de ambiente: `DB_URL`, `DB_USER`,
+`DB_PASSWORD`, `KAFKA_BOOTSTRAP_SERVERS`, `EUREKA_URL`, `ZIPKIN_URL` e `LOKI_URL`.
 
 ## Testes
 

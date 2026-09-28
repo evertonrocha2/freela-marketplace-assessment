@@ -29,9 +29,10 @@ grupo consumidor, e o reprocessamento pela API.
 
 ```bash
 cd infra && docker compose up -d && cd ..
-mvn -DskipTests package
-bash scripts/subir-aplicacoes.sh
 ```
+
+Depois suba as seis aplicações como descrito no
+[README, em "Execução das aplicações"](../README.md#execução-das-aplicações).
 
 Aguarde o registro no Eureka (`http://localhost:8761`). As primeiras chamadas pelo gateway podem
 retornar `503` enquanto o registro não completa; leva cerca de 30 segundos.
