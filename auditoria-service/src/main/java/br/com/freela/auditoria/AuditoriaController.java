@@ -116,13 +116,14 @@ public class AuditoriaController {
 
     public record EventoFalhaResponse(UUID id, UUID eventId, String eventType, UUID contratoId, String correlationId,
                                       String topicoOriginal, Integer particaoOriginal, Long offsetOriginal,
-                                      String excecao, String mensagemErro, Instant recebidoEm, Instant reenviadoEm,
-                                      String payload) {
+                                      String grupoConsumidor, String excecao, String mensagemErro, Instant recebidoEm,
+                                      Instant reenviadoEm, String payload) {
 
         static EventoFalhaResponse de(EventoFalha f) {
             return new EventoFalhaResponse(f.getId(), f.getEventId(), f.getEventType(), f.getContratoId(),
                     f.getCorrelationId(), f.getTopicoOriginal(), f.getParticaoOriginal(), f.getOffsetOriginal(),
-                    f.getExcecao(), f.getMensagemErro(), f.getRecebidoEm(), f.getReenviadoEm(), f.getPayload());
+                    f.getGrupoConsumidor(), f.getExcecao(), f.getMensagemErro(), f.getRecebidoEm(),
+                    f.getReenviadoEm(), f.getPayload());
         }
     }
 }

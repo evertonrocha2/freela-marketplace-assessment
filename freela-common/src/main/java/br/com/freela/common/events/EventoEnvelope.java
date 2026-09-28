@@ -38,18 +38,41 @@ public record EventoEnvelope(
 
     public static final int VERSAO_ATUAL = 1;
 
+    /**
+     * Valida os campos marcados como obrigatorios na especificacao (docs/EVENTOS.md).
+     *
+     * <p>A validacao roda tambem na desserializacao. Uma mensagem que chegue sem algum desses campos
+     * falha com {@link IllegalArgumentException}, que a politica dos consumidores trata como nao
+     * retentavel: ela vai direto para o DLT em vez de ser processada pela metade.</p>
+     */
     public EventoEnvelope {
         if (eventId == null) {
             throw new IllegalArgumentException("eventId e obrigatorio");
         }
-        if (eventType == null || eventType.isBlank()) {
-            throw new IllegalArgumentException("eventType e obrigatorio");
+        exigirTexto(eventType, "eventType");
+        if (eventVersion < 1) {
+            throw new IllegalArgumentException("eventVersion deve ser 1 ou maior");
+        }
+        exigirTexto(aggregateType, "aggregateType");
+        if (aggregateId == null) {
+            throw new IllegalArgumentException("aggregateId e obrigatorio");
         }
         if (contratoId == null) {
             throw new IllegalArgumentException("contratoId e obrigatorio");
         }
         if (occurredAt == null) {
             throw new IllegalArgumentException("occurredAt e obrigatorio");
+        }
+        exigirTexto(correlationId, "correlationId");
+        exigirTexto(producer, "producer");
+        if (payload == null || payload.isNull()) {
+            throw new IllegalArgumentException("payload e obrigatorio");
+        }
+    }
+
+    private static void exigirTexto(String valor, String campo) {
+        if (valor == null || valor.isBlank()) {
+            throw new IllegalArgumentException(campo + " e obrigatorio");
         }
     }
 
