@@ -12,9 +12,13 @@
         <spring-boot.version>4.1.0</spring-boot.version>
         <spring-cloud.version>2025.1.2</spring-cloud.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <modules>
+        <module>freela-observability</module>
+        <module>freela-common</module>
         <module>eureka-server</module>
         <module>api-gateway</module>
         <module>contrato-service</module>
@@ -49,12 +53,26 @@
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
+                    <!-- Sem o spring-boot-starter-parent, o repackage nao e ligado ao ciclo
+                         automaticamente. Sem esta execucao, mvn package gera jars apenas com as
+                         classes, que nao sobem com java -jar. -->
+                    <executions>
+                        <execution>
+                            <goals><goal>repackage</goal></goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.14.1</version>
-                    <configuration><release>${java.version}</release></configuration>
+                    <configuration>
+                        <release>${java.version}</release>
+                        <!-- Sem -parameters, o Spring nao consegue ler o nome de @PathVariable
+                             e @RequestParam a partir da assinatura do metodo. -->
+                        <parameters>true</parameters>
+                        <encoding>UTF-8</encoding>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

@@ -6,54 +6,81 @@ A aplicação representa um cenário em que clientes contratam freelancers para 
 
 ## Visão geral
 
-O sistema é composto por seis aplicações Spring Boot:
+O sistema é composto por oito módulos Maven, seis deles aplicações Spring Boot:
 
 - `eureka-server`: registro e descoberta dos serviços.
-- `api-gateway`: ponto de entrada HTTP da aplicação.
-- `contrato-service`: gerenciamento dos contratos entre clientes e freelancers.
-- `notificacao-service`: armazenamento das notificações relacionadas aos contratos.
-- `reputacao-service`: manutenção de informações agregadas sobre os freelancers.
-- `auditoria-service`: registro de eventos relevantes do sistema.
+- `api-gateway`: ponto de entrada HTTP, origem do `correlationId` de cada operação.
+- `contrato-service`: ciclo de vida dos contratos e publicação dos eventos.
+- `notificacao-service`: notificações do ciclo de vida do contrato.
+- `reputacao-service`: números agregados por freelancer.
+- `auditoria-service`: registro de todos os eventos e das mensagens que falharam.
+- `freela-common`: contrato de mensageria, correlação e idempotência compartilhados.
+- `freela-observability`: configuração de log e tracing comum a todas as aplicações.
 
-A infraestrutura local utiliza PostgreSQL e Apache Kafka.
+A comunicação entre o `contrato-service` e os demais é assíncrona, por Apache Kafka. Não há
+chamada HTTP entre eles.
 
 ```text
-                         +-------------------+
-                         |      Cliente      |
-                         +---------+---------+
-                                   |
-                                   | HTTP
-                                   v
-                         +-------------------+
-                         |    API Gateway    |
-                         |       :8080       |
-                         +---------+---------+
-                                   |
-                     Service Discovery / Eureka
-                                   |
-                +------------------+------------------+
-                |                  |                  |
-                v                  v                  v
-       +----------------+  +----------------+  +----------------+
-       | contrato       |  | notificacao    |  | reputacao      |
-       | service :8081  |  | service :8082  |  | service :8083  |
-       +----------------+  +----------------+  +----------------+
-                |
-                |                       +----------------+
-                +---------------------->| auditoria      |
-                                        | service :8084  |
-                                        +----------------+
+                        HTTP  (X-Correlation-Id)
+                                 │
+                                 ▼
+                       ┌───────────────────┐
+                       │    API Gateway    │  gera o correlationId
+                       │       :8080       │  inicia o trace
+                       └─────────┬─────────┘
+                                 │  lb://contrato-service   (Eureka :8761)
+                                 ▼
+                       ┌───────────────────┐        ┌────────────────┐
+                       │  contrato-service │───────▶│  contrato_db   │
+                       │       :8081       │  uma   │   contratos    │
+                       │                   │ trans. │ outbox_eventos │
+                       └─────────┬─────────┘        └────────────────┘
+                                 │
+                       relay da outbox (300 ms)
+                                 │
+                                 ▼
+                  ┌──────────────────────────────┐
+                  │  freela.contratos.eventos    │   3 partições
+                  │  chave = contratoId          │   Kafka KRaft :9092
+                  └───┬───────────┬───────────┬──┘
+                      │           │           │      (três grupos distintos)
+           ┌──────────▼──┐  ┌─────▼───────┐  ┌▼──────────────┐
+           │ notificacao │  │  reputacao  │  │   auditoria   │
+           │    :8082    │  │    :8083    │  │     :8084     │
+           └──────┬──────┘  └──────┬──────┘  └───────┬───────┘
+                  │                │                 │
+           notificacao_db     reputacao_db      auditoria_db
+                                                      ▲
+                  falha após as tentativas            │
+                  ─────────────────────────▶ freela.contratos.eventos.dlt
 
-                          +-------------------+
-                          |       Kafka       |
-                          |       :9092       |
-                          +-------------------+
-
-                          +-------------------+
-                          |    PostgreSQL     |
-                          |       :5432       |
-                          +-------------------+
+       Observabilidade (todos os serviços):
+         logs em JSON ──▶ Loki :3100 ──▶ Grafana :3000
+         spans        ──▶ Zipkin :9411
 ```
+
+### Documentação
+
+| Documento | Conteúdo |
+|---|---|
+| [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | Visão geral, módulos, caminho de uma operação, decisões e endpoints |
+| [docs/EVENTOS.md](docs/EVENTOS.md) | Especificação das mensagens: tópicos, envelope, payload, headers, exemplos |
+| [docs/CONFIABILIDADE.md](docs/CONFIABILIDADE.md) | Outbox transacional, ordenação, idempotência e tratamento de falhas |
+| [docs/OBSERVABILIDADE.md](docs/OBSERVABILIDADE.md) | Logs, centralização no Loki, correlação e tracing no Zipkin |
+| [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md) | Como reproduzir cada evidência pedida |
+
+### Resumo das escolhas
+
+| Assunto | Escolha |
+|---|---|
+| Tópico | Um só para todo o ciclo de vida do contrato: `freela.contratos.eventos`, 3 partições |
+| Chave de particionamento | `contratoId` — mantém ordem por contrato e permite paralelismo entre contratos |
+| Publicação transacional | Outbox no `contrato_db`, com relay agendado |
+| Concorrência | 3 consumidores por serviço, um por partição |
+| Idempotência | `eventId` em `eventos_processados`, gravado na mesma transação do efeito |
+| Falhas | Retentativa bloqueante (3 tentativas, backoff exponencial) e depois DLT |
+| Logs centralizados | Loki, alimentado direto pelas aplicações; consulta no Grafana |
+| Tracing | Micrometer Tracing + Brave, exportando para o Zipkin, propagação W3C através do Kafka |
 
 ## Domínio
 
@@ -108,33 +135,34 @@ contrato-service
         └── web
 ```
 
-O Aggregate `Contrato` concentra as regras relacionadas às mudanças de estado e produz eventos de domínio. Atualmente existe o evento `ContratoCriado`, que contém as principais informações do contrato no momento da criação.
+O Aggregate `Contrato` concentra as regras das mudanças de estado e produz um evento de domínio a
+cada transição válida: `ContratoCriado`, `EntregaRegistrada`, `ContratoConcluido` e
+`ContratoCancelado`. Cada evento carrega o estado do contrato no momento em que o fato ocorreu, e
+não apenas o identificador, para que os consumidores ajam sem precisar chamar o `contrato-service`
+de volta.
+
+Os eventos ficam acumulados no agregado e são recolhidos pela camada de aplicação, que os grava na
+outbox dentro da mesma transação da mudança de estado. Transições inválidas levantam
+`TransicaoInvalidaException` e não produzem evento nenhum.
 
 ## Serviços
 
+Todos os caminhos abaixo também respondem pelo API Gateway em `http://localhost:8080`.
+
 ### contrato-service
 
-Responsável pelo ciclo de vida dos contratos.
+Ciclo de vida dos contratos e publicação dos eventos. Porta `8081`, banco `contrato_db`.
 
-Porta:
-
-```text
-8081
-```
-
-Banco:
-
-```text
-contrato_db
-```
-
-Principais recursos HTTP:
-
-```text
-POST /api/contratos
-GET  /api/contratos
-GET  /api/contratos/{id}
-```
+| Método | Caminho | Descrição |
+|---|---|---|
+| `POST` | `/api/contratos` | Cria o contrato. Emite `ContratoCriado`. |
+| `GET` | `/api/contratos` | Lista. |
+| `GET` | `/api/contratos/{id}` | Busca. |
+| `POST` | `/api/contratos/{id}/entregas` | `ATIVO` → `ENTREGA_REGISTRADA`. Emite `EntregaRegistrada`. |
+| `POST` | `/api/contratos/{id}/conclusao` | `ENTREGA_REGISTRADA` → `CONCLUIDO`. Emite `ContratoConcluido`. |
+| `POST` | `/api/contratos/{id}/cancelamento` | Cancela. Corpo opcional `{"motivo": "..."}`. Emite `ContratoCancelado`. |
+| `GET` | `/api/contratos/outbox` | Inspeciona a outbox. Filtros: `contratoId`, `correlationId`, `status`. |
+| `POST` | `/api/contratos/outbox/{sequencia}/reenvio` | Recoloca a mensagem na fila de publicação. |
 
 Exemplo de criação de contrato:
 
@@ -147,78 +175,50 @@ Exemplo de criação de contrato:
 }
 ```
 
+Transição inválida retorna `409 Conflict` com código `TRANSICAO_INVALIDA`; contrato inexistente
+retorna `404`. As respostas de erro trazem o `correlationId` da operação.
+
+As tabelas do banco são `contratos` e `outbox_eventos`.
+
 ### notificacao-service
 
-Mantém notificações relacionadas aos acontecimentos do marketplace.
+Registra as notificações do ciclo de vida do contrato. Porta `8082`, banco `notificacao_db`.
 
-Porta:
+Reage a todos os quatro eventos. `EntregaRegistrada` notifica o cliente; os demais, o freelancer.
+Cada notificação guarda o `eventId` que a originou, o que torna a deduplicação verificável.
 
-```text
-8082
-```
-
-Banco:
-
-```text
-notificacao_db
-```
-
-As notificações armazenam informações como contrato, destinatário, tipo, mensagem e momento de criação.
+| Método | Caminho | Descrição |
+|---|---|---|
+| `GET` | `/api/notificacoes` | Filtros: `contratoId`, `correlationId`. |
+| `GET` | `/api/notificacoes/eventos-processados` | Marcas de idempotência. Filtro: `contratoId`. |
 
 ### reputacao-service
 
-Mantém informações agregadas sobre a atividade dos freelancers.
+Números agregados por freelancer. Porta `8083`, banco `reputacao_db`.
 
-Porta:
+Reage a `ContratoConcluido` (incrementa `contratosConcluidos` e soma o valor) e a
+`ContratoCancelado` (incrementa `contratosCancelados`). Ignora os outros dois.
 
-```text
-8083
-```
-
-Banco:
-
-```text
-reputacao_db
-```
-
-Para cada freelancer são mantidos dados como quantidade de contratos concluídos e valor total dos contratos registrados.
-
-Endpoint disponível para consulta:
-
-```text
-GET /api/reputacoes
-```
+| Método | Caminho | Descrição |
+|---|---|---|
+| `GET` | `/api/reputacoes` | Lista. |
+| `GET` | `/api/reputacoes/{freelancerId}` | Busca por freelancer. |
+| `GET` | `/api/reputacoes/eventos-processados` | Marcas de idempotência. Filtro: `contratoId`. |
 
 ### auditoria-service
 
-Responsável pelo armazenamento de registros associados aos eventos do sistema.
+Registra todos os eventos, sem filtrar por tipo, e também as mensagens que foram para o dead
+letter topic. Porta `8084`, banco `auditoria_db`.
 
-Porta:
+Cada registro guarda `eventId`, `eventType`, `eventVersion`, `aggregateType`, `aggregateId`,
+`contratoId`, `correlationId`, `producer`, `occurredAt`, momento de recebimento e o payload.
 
-```text
-8084
-```
+| Método | Caminho | Descrição |
+|---|---|---|
+| `GET` | `/api/auditoria` | Filtros: `contratoId`, `correlationId`, `eventType`. |
+| `GET` | `/api/auditoria/falhas` | Mensagens do DLT. Filtros: `contratoId`, `correlationId`. |
+| `POST` | `/api/auditoria/falhas/{id}/reprocessar` | Republica a mensagem no tópico principal. |
 
-Banco:
-
-```text
-auditoria_db
-```
-
-Cada registro de auditoria pode armazenar:
-
-- `eventId`;
-- `aggregateId`;
-- tipo do evento;
-- `correlationId`;
-- payload original;
-- horário de recebimento.
-
-Endpoint disponível para consulta:
-
-```text
-GET /api/auditoria
-```
 
 ## API Gateway
 
@@ -275,7 +275,7 @@ como endereço do service registry.
 
 ## PostgreSQL
 
-O ambiente utiliza uma única instância PostgreSQL com bancos separados para cada serviço.
+O ambiente utiliza uma única instância PostgreSQL com bancos separados por serviço.
 
 ```text
 Host:     localhost
@@ -284,22 +284,21 @@ Usuário:  freela
 Senha:    freela
 ```
 
-Bancos criados durante a inicialização:
+Bancos criados na inicialização (`infra/postgres/init-databases.sql`):
 
-```text
-contrato_db
-notificacao_db
-reputacao_db
-auditoria_db
-```
+| Banco | Tabelas |
+|---|---|
+| `contrato_db` | `contratos`, `outbox_eventos` |
+| `notificacao_db` | `notificacoes`, `eventos_processados` |
+| `reputacao_db` | `reputacoes`, `eventos_processados` |
+| `auditoria_db` | `auditoria_eventos`, `auditoria_falhas`, `eventos_processados` |
 
-O script de criação dos bancos está em:
+`outbox_eventos` é a outbox transacional do produtor. `eventos_processados` guarda as marcas de
+idempotência de cada consumidor. `auditoria_falhas` guarda as mensagens que foram para o dead
+letter topic.
 
-```text
-infra/postgres/init-databases.sql
-```
+Os serviços utilizam Hibernate com `ddl-auto: update` para criação e atualização das tabelas.
 
-Os serviços utilizam Hibernate com `ddl-auto: update` para criação e atualização das tabelas locais.
 
 ## Apache Kafka
 
@@ -317,51 +316,54 @@ Para aplicações executadas dentro da rede Docker:
 kafka:19092
 ```
 
-O broker possui listeners separados para comunicação interna e externa.
+O ambiente também inclui o Kafka UI em `http://localhost:8090`.
 
-O ambiente também inclui o Kafka UI.
+### Tópicos
 
-```text
-http://localhost:8090
-```
+| Tópico | Partições | Chave | Produtor | Consumidores |
+|---|---:|---|---|---|
+| `freela.contratos.eventos` | 3 | `contratoId` | `contrato-service` | `notificacao-service`, `reputacao-service`, `auditoria-service` |
+| `freela.contratos.eventos.dlt` | 3 | a mesma da original | qualquer consumidor que esgote as tentativas | `auditoria-service` |
+
+Os tópicos são criados pelo `contrato-service` (`TopicosConfig`), e não pela criação automática do
+broker: é isso que garante as 3 partições. Um tópico criado sob demanda nasceria com uma partição
+só e não haveria consumo concorrente.
+
+### Eventos
+
+`ContratoCriado`, `EntregaRegistrada`, `ContratoConcluido` e `ContratoCancelado`, todos no mesmo
+tópico. O formato completo das mensagens está em [docs/EVENTOS.md](docs/EVENTOS.md).
 
 ## Logs
 
-Todos os serviços utilizam logs em nível `INFO` com um formato comum contendo data, nível, nome da aplicação, thread, logger e mensagem.
-
-Exemplo:
-
-```text
-2026-09-14 14:42:18.431 INFO service=contrato-service thread=http-nio-8081-exec-1 logger=b.c.f.c.a.ContratoApplicationService - contrato.criacao.inicio clienteId=... freelancerId=...
-```
-
-O código registra pontos importantes do fluxo, incluindo:
+Todos os serviços produzem a mesma linha, em três destinos: console (texto), `logs/<servico>.json`
+(uma linha JSON por evento) e Loki (para consulta centralizada).
 
 ```text
-gateway.request.inicio
-gateway.request.fim
-http.contrato.criar
-contrato.criacao.inicio
-contrato.dominio.criado
-contrato.persistence.save.inicio
-contrato.persistence.save.sucesso
-contrato.evento.pendente
-contrato.criacao.sucesso
-reputacao.atualizacao.inicio
-reputacao.atualizacao.sucesso
-auditoria.registro.inicio
-auditoria.registro.sucesso
+2026-09-21 15:17:18.352 INFO  service=notificacao-service traceId=6ab174c98e74e4cd0e2430ebc21f1d45
+  spanId=0e2430ebc21f1d45 correlationId=demo-20260921-151717
+  contratoId=6ae25f5b-01c3-4d45-8780-e5e08b96d6f7 eventId=48d9247f-bc46-46d8-b273-ef19b61faf59
+  thread=notificacao-contratos-2-C-1 logger=b.c.f.notificacao.NotificacaoService
+  - notificacao.registro.sucesso notificacaoId=7e03238b-... resultado=CRIADA
 ```
 
-A presença do `correlationId` nas chamadas HTTP permite relacionar logs produzidos durante uma mesma requisição.
+Os campos `traceId`, `correlationId`, `contratoId` e `eventId` vêm do MDC e são o que permite
+recuperar uma operação inteira no Grafana sem abrir o console de cada aplicação:
+
+```logql
+{service=~".+"} | json | correlationId = `demo-20260921-151717`
+```
+
+Informações sensíveis não são registradas. O payload do evento só é persistido pelo
+`auditoria-service`, que é o serviço cujo propósito é guardá-lo.
+
+Detalhes, convenção de nomes das linhas e consultas prontas em
+[docs/OBSERVABILIDADE.md](docs/OBSERVABILIDADE.md).
 
 ## Infraestrutura local
 
-Os serviços de infraestrutura estão definidos em:
-
-```text
-infra/docker-compose.yml
-```
+Os serviços de infraestrutura estão definidos em `infra/docker-compose.yml`:
+PostgreSQL, Kafka (KRaft), Kafka UI, Zipkin, Loki e Grafana.
 
 Para iniciar o ambiente:
 
@@ -382,53 +384,108 @@ Para encerrar:
 docker compose down
 ```
 
-Os dados do PostgreSQL são mantidos em volume Docker.
-
 Para remover também os dados persistidos:
 
 ```bash
 docker compose down -v
 ```
 
+O Grafana já sobe com os datasources Loki e Zipkin configurados e com o dashboard
+**Freela - Rastreamento de operação** provisionado, sem tela de login.
+
+Se a porta 5432 já estiver em uso na sua máquina, suba o Postgres em outra porta:
+
+```bash
+POSTGRES_PORT=5433 docker compose up -d
+```
+
+Nesse caso passe a mesma porta para as aplicações (`DB_PORT=5433` no script de inicialização).
+
 ## Execução das aplicações
 
-A partir da raiz do projeto, cada módulo pode ser iniciado separadamente com Maven.
+É necessário Java 21. Se houver um JDK mais antigo no `PATH`, aponte `JAVA_HOME` para o 21.
 
-Eureka Server:
+### Com os scripts
+
+```bash
+mvn -DskipTests package
+bash scripts/subir-aplicacoes.sh
+```
+
+O script sobe as seis aplicações na ordem de dependência, espera cada uma responder em
+`/actuator/health`, grava os logs de console em `logs/run-<servico>.out` e os PIDs em `logs/pids`.
+
+Para encerrar:
+
+```bash
+bash scripts/parar-aplicacoes.sh
+```
+
+Variáveis aceitas pelo script de inicialização: `DB_PORT`, `KAFKA_BOOTSTRAP_SERVERS`, `ZIPKIN_URL`,
+`LOKI_URL`, `EUREKA_URL` e `PORTA_GATEWAY`, `PORTA_CONTRATO`, `PORTA_NOTIFICACAO`,
+`PORTA_REPUTACAO`, `PORTA_AUDITORIA`, `PORTA_EUREKA`.
+
+```bash
+DB_PORT=5433 PORTA_CONTRATO=8181 bash scripts/subir-aplicacoes.sh
+```
+
+### Módulo a módulo
+
+Cada aplicação também pode ser iniciada isoladamente, um terminal para cada:
 
 ```bash
 mvn -pl eureka-server spring-boot:run
-```
-
-API Gateway:
-
-```bash
 mvn -pl api-gateway spring-boot:run
-```
-
-Contrato Service:
-
-```bash
 mvn -pl contrato-service spring-boot:run
-```
-
-Notificação Service:
-
-```bash
 mvn -pl notificacao-service spring-boot:run
-```
-
-Reputação Service:
-
-```bash
 mvn -pl reputacao-service spring-boot:run
-```
-
-Auditoria Service:
-
-```bash
 mvn -pl auditoria-service spring-boot:run
 ```
+
+O `eureka-server` precisa subir primeiro. As primeiras chamadas pelo gateway podem retornar `503`
+enquanto o registro no Eureka não completa, o que leva cerca de 30 segundos.
+
+## Testes
+
+```bash
+mvn test
+```
+
+38 testes, nenhum deles dependendo da infraestrutura Docker:
+
+| Módulo | Cobertura |
+|---|---|
+| `freela-common` | Campos obrigatórios do envelope e do payload cobrados pelo código |
+| `contrato-service` | Agregado e eventos de domínio; formato do envelope e chave de particionamento; outbox publicando em um broker Kafka embutido, com verificação de ordem e de particionamento |
+| `notificacao-service` | Reprocessamento não gera notificação repetida |
+| `reputacao-service` | Reprocessamento não incrementa contador nem soma valor de novo; conclusões simultâneas do mesmo freelancer não perdem incremento |
+| `auditoria-service` | Reprocessamento não duplica registro; o DLT registra uma falha por grupo consumidor, não duplica a mesma cópia e não republica no próprio DLT |
+
+`OutboxKafkaIntegrationTest` usa `@EmbeddedKafka`; os demais usam H2 em memória.
+
+## Evidências
+
+```bash
+bash scripts/evidencias.sh
+```
+
+Roda o roteiro completo e grava a saída em `evidencias/evidencias-<timestamp>.txt`: requisição pelo
+gateway, persistência, gravação na outbox, publicação no Kafka, consumo pelos três serviços,
+reentrega de mensagem duplicada, ordenação com vários contratos em paralelo, mensagem inválida
+indo para o dead letter topic e o reprocessamento dela, e a mesma operação consultada no Loki e
+no Zipkin. As respostas do Loki e do Zipkin são gravadas ao lado, em `loki-<timestamp>.json` e
+`zipkin-<timestamp>.json`.
+
+Se Loki ou Zipkin estiverem em outro endereço, passe `LOKI` e `ZIPKIN`:
+
+```bash
+LOKI=http://localhost:3100 ZIPKIN=http://localhost:9411 bash scripts/evidencias.sh
+```
+
+A execução versionada em `evidencias/` é a de 28/09/2026 14:33. O que cada arquivo comprova está
+no topo de [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md).
+
+O passo a passo manual equivalente está em [docs/EVIDENCIAS.md](docs/EVIDENCIAS.md).
 
 ## Portas
 
@@ -443,16 +500,16 @@ mvn -pl auditoria-service spring-boot:run
 | Kafka | `9092` |
 | Kafka UI | `8090` |
 | PostgreSQL | `5432` |
+| Grafana | `3000` |
+| Loki | `3100` |
+| Zipkin | `9411` |
 
 ## Teste básico
 
-Com a infraestrutura e as aplicações em execução, um contrato pode ser criado pelo Gateway:
+Com a infraestrutura e as aplicações em execução:
 
 ```bash
-curl -i -X POST http://localhost:8080/api/contratos \
-  -H 'Content-Type: application/json' \
-  -H 'X-Correlation-Id: teste-contrato-001' \
-  -d '{
+curl -i -X POST http://localhost:8080/api/contratos   -H 'Content-Type: application/json'   -H 'X-Correlation-Id: teste-contrato-001'   -d '{
     "clienteId": "11111111-1111-1111-1111-111111111111",
     "freelancerId": "22222222-2222-2222-2222-222222222222",
     "titulo": "Construção de API de pagamentos",
@@ -460,29 +517,45 @@ curl -i -X POST http://localhost:8080/api/contratos \
   }'
 ```
 
-Consulta dos contratos:
+Guardando o `id` retornado, o ciclo completo:
 
 ```bash
-curl http://localhost:8080/api/contratos
+CONTRATO=<id-retornado>
+curl -X POST "http://localhost:8080/api/contratos/${CONTRATO}/entregas"  -H 'X-Correlation-Id: teste-contrato-001'
+curl -X POST "http://localhost:8080/api/contratos/${CONTRATO}/conclusao" -H 'X-Correlation-Id: teste-contrato-001'
 ```
 
-Consulta de um contrato específico:
+E o efeito nos consumidores:
 
 ```bash
-curl http://localhost:8080/api/contratos/{id}
+curl "http://localhost:8080/api/contratos/outbox?contratoId=${CONTRATO}"
+curl "http://localhost:8080/api/notificacoes?contratoId=${CONTRATO}"
+curl "http://localhost:8080/api/reputacoes/22222222-2222-2222-2222-222222222222"
+curl "http://localhost:8080/api/auditoria?contratoId=${CONTRATO}"
 ```
+
+A operação inteira no Grafana (`http://localhost:3000`):
+
+```logql
+{service=~".+"} | json | correlationId = `teste-contrato-001`
+```
+
+E o trace correspondente no Zipkin (`http://localhost:9411`).
 
 ## Tecnologias
 
 ```text
 Java 21
 Spring Boot 4.1
-Spring Cloud
 Spring Cloud Gateway
 Netflix Eureka
+Spring Kafka
 Spring Data JPA
 PostgreSQL 16
-Apache Kafka 4
+Apache Kafka 4 (KRaft)
+Micrometer Tracing + Brave + Zipkin
+Loki + Grafana
 Docker Compose
 Maven
+JUnit 5, Testcontainers-free (EmbeddedKafka + H2)
 ```

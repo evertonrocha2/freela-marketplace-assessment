@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- APP_NAME vira o label "service" no Loki e o nome do arquivo em logs/. -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="aplicacao"/>
+    <include resource="logback/freela-base.xml"/>
+</configuration>

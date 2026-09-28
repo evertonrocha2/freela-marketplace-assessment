@@ -1,0 +1,130 @@
+{
+  "uid": "freela-rastreamento",
+  "title": "Freela - Rastreamento de operação",
+  "tags": ["freela", "logs", "correlacao"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "correlationId",
+        "label": "correlationId",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      },
+      {
+        "name": "contratoId",
+        "label": "contratoId",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      },
+      {
+        "name": "eventId",
+        "label": "eventId",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "Como usar",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Preencha **um** dos campos no topo. Cada painel mostra as linhas de log de **todos os serviços** para aquele identificador, em ordem cronológica: gateway, contrato-service, relay da outbox e os três consumidores. O campo `traceId` de cada linha abre o trace correspondente no Zipkin."
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Operação por correlationId",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 4 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=~\".+\"} | json | correlationId = `$correlationId`",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Ciclo de vida de um contrato (contratoId)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 15 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=~\".+\"} | json | contratoId = `$contratoId`",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Trajeto de um evento (eventId) - útil para ver duplicidade descartada",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 26 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=~\".+\"} | json | eventId = `$eventId`",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Falhas e mensagens enviadas ao DLT",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 37 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=~\".+\"} |~ `kafka.consumo.falha|kafka.consumo.dlt|kafka.consumo.retentativa|dlt.mensagem|outbox.publicacao.falha`",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}

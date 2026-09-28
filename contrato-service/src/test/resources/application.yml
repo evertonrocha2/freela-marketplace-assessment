@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: contrato-service
+  datasource:
+    url: jdbc:h2:mem:contrato_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+
+freela:
+  outbox:
+    intervalo-ms: 200
+    tamanho-lote: 50
+    max-tentativas: 3
+    timeout-envio-ms: 10000
+
+# Fora do ambiente completo: sem registro no Eureka e sem exportacao de trace para o Zipkin.
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+
+management:
+  tracing:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    br.com.freela: INFO

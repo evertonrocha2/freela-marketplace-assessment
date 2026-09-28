@@ -7,7 +7,8 @@ services:
       POSTGRES_PASSWORD: freela
       POSTGRES_DB: postgres
     ports:
-      - "5432:5432"
+      # A porta do host pode ser trocada com POSTGRES_PORT quando 5432 ja estiver em uso na maquina.
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
@@ -37,7 +38,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Os topicos do projeto sao declarados pelo contrato-service com 3 particoes.
+      # A criacao automatica fica ligada so como rede de seguranca para topicos avulsos.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
       interval: 10s
@@ -56,10 +60,66 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: freela-local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks: [freela-net]
+
+  # ---------------------------------------------------------------------------
+  # Observabilidade
+  # ---------------------------------------------------------------------------
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: freela-zipkin
+    ports:
+      - "9411:9411"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9411/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [freela-net]
+
+  # Armazenamento central dos logs. As aplicacoes enviam direto por HTTP
+  # (appender loki4j), sem agente coletor no meio.
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: freela-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [freela-net]
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: freela-grafana
+    depends_on:
+      loki:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      # Ambiente local de avaliacao: sem tela de login, para a evidencia abrir direto.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE: traceToMetrics
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
     networks: [freela-net]
 
 volumes:
   postgres_data:
+  loki_data:
+  grafana_data:
 
 networks:
   freela-net:

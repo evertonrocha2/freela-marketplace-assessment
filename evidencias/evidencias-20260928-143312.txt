@@ -1,0 +1,286 @@
+Aguardando o gateway rotear para os servicos...
+   pronto apos 1 tentativa(s)
+
+============================================================
+1. Requisicao recebida pelo API Gateway (correlationId=demo-20260928-143312)
+============================================================
+POST http://localhost:8080/api/contratos
+HTTP/1.1 201 Created
+X-Correlation-Id: demo-20260928-143312
+{
+  "id": "d03ef9ff-e195-49e3-aa6e-367ce8ec46d9",
+  "clienteId": "11111111-1111-1111-1111-111111111111",
+  "freelancerId": "22222222-2222-2222-2222-222222222222",
+  "titulo": "Construcao de API de pagamentos",
+  "valor": 3500.0,
+  "status": "ATIVO",
+  "criadoEm": "2026-09-28T17:33:13.333640800Z"
+}
+contratoId=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9
+
+============================================================
+2. Demais transicoes do mesmo contrato (persistencia no contrato-service)
+============================================================
+POST /api/contratos/{id}/entregas
+   status do contrato: ENTREGA_REGISTRADA
+POST /api/contratos/{id}/conclusao
+   status do contrato: CONCLUIDO
+Estado final lido de volta:
+{
+  "id": "d03ef9ff-e195-49e3-aa6e-367ce8ec46d9",
+  "clienteId": "11111111-1111-1111-1111-111111111111",
+  "freelancerId": "22222222-2222-2222-2222-222222222222",
+  "titulo": "Construcao de API de pagamentos",
+  "valor": 3500.0,
+  "status": "CONCLUIDO",
+  "criadoEm": "2026-09-28T17:33:13.333641Z"
+}
+
+Aguardando a auditoria registrar os tres eventos...
+   auditoria tem 3 evento(s) deste contrato
+
+============================================================
+3. Outbox transacional do contrato-service
+============================================================
+Cada linha foi gravada na mesma transacao da mudanca de estado. A coluna seq define a ordem.
+   seq=110   ContratoCriado       status=PUBLICADO  chave=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9
+         eventId=b94e4352-32f7-42a8-a460-dd9c57df8cd5 publicadoEm=2026-09-28T17:33:13.502145Z
+   seq=111   EntregaRegistrada    status=PUBLICADO  chave=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9
+         eventId=046f7580-a6f7-45f0-9eb4-c178f8c448b0 publicadoEm=2026-09-28T17:33:13.827467Z
+   seq=112   ContratoConcluido    status=PUBLICADO  chave=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9
+         eventId=1914174b-06b4-4615-9d40-ca5c1f20f2f7 publicadoEm=2026-09-28T17:33:13.844347Z
+
+============================================================
+4. Mensagens publicadas no topico Kafka
+============================================================
+Formato: Particao:<n> Offset:<n> <chave> <envelope>
+Partition:0	Offset:49	d03ef9ff-e195-49e3-aa6e-367ce8ec46d9	{"eventId":"b94e4352-32f7-42a8-a460-dd9c57df8cd5","eventType":"ContratoCriado","eventVersion":1,"aggregateType":"Contrato","aggregateId":"d03ef9ff-e195-49e3-aa6e-367ce8ec46d9","contratoId":"d03ef9ff-e195-49e3-aa6e-367ce8ec46d9","occurredAt":"2026-09-28T17:33:13
+Partition:0	Offset:50	d03ef9ff-e195-49e3-aa6e-367ce8ec46d9	{"eventId":"046f7580-a6f7-45f0-9eb4-c178f8c448b0","eventType":"EntregaRegistrada","eventVersion":1,"aggregateType":"Contrato","aggregateId":"d03ef9ff-e195-49e3-aa6e-367ce8ec46d9","contratoId":"d03ef9ff-e195-49e3-aa6e-367ce8ec46d9","occurredAt":"2026-09-28T17:33
+Partition:0	Offset:51	d03ef9ff-e195-49e3-aa6e-367ce8ec46d9	{"eventId":"1914174b-06b4-4615-9d40-ca5c1f20f2f7","eventType":"ContratoConcluido","eventVersion":1,"aggregateType":"Contrato","aggregateId":"d03ef9ff-e195-49e3-aa6e-367ce8ec46d9","contratoId":"d03ef9ff-e195-49e3-aa6e-367ce8ec46d9","occurredAt":"2026-09-28T17:33
+
+Particoes do topico:
+Topic: freela.contratos.eventos	TopicId: 0AsjWjkSSjWnGv-X4qdmWg	PartitionCount: 3	ReplicationFactor: 1	Configs: min.insync.replicas=1
+	Topic: freela.contratos.eventos	Partition: 0	Leader: 1	Replicas: 1	Isr: 1	Elr: 	LastKnownElr: 
+	Topic: freela.contratos.eventos	Partition: 1	Leader: 1	Replicas: 1	Isr: 1	Elr: 	LastKnownElr: 
+	Topic: freela.contratos.eventos	Partition: 2	Leader: 1	Replicas: 1	Isr: 1	Elr: 	LastKnownElr: 
+
+============================================================
+5. Consumo e persistencia nos tres servicos
+============================================================
+-- notificacao-service
+   ContratoCriado       destinatario=22222222-2222-2222-2222-222222222222
+       Novo contrato: Construcao de API de pagamentos
+   EntregaRegistrada    destinatario=11111111-1111-1111-1111-111111111111
+       Entrega registrada no contrato: Construcao de API de pagamentos
+   ContratoConcluido    destinatario=22222222-2222-2222-2222-222222222222
+       Contrato concluído: Construcao de API de pagamentos
+-- reputacao-service (freelancer 22222222-2222-2222-2222-222222222222)
+   concluidos=6 cancelados=0 valorTotal=21000.0 ultimoEventoId=1914174b-06b4-4615-9d40-ca5c1f20f2f7
+-- auditoria-service
+   ContratoCriado       occurredAt=2026-09-28T17:33:13.333641Z
+       eventId=b94e4352-32f7-42a8-a460-dd9c57df8cd5 correlationId=demo-20260928-143312
+   EntregaRegistrada    occurredAt=2026-09-28T17:33:13.652444Z
+       eventId=046f7580-a6f7-45f0-9eb4-c178f8c448b0 correlationId=demo-20260928-143312
+   ContratoConcluido    occurredAt=2026-09-28T17:33:13.781552Z
+       eventId=1914174b-06b4-4615-9d40-ca5c1f20f2f7 correlationId=demo-20260928-143312
+
+============================================================
+6. Correlacao: a operacao inteira recuperada por correlationId
+============================================================
+   auditoria    : 3
+   notificacoes : 3
+   outbox       : 3
+
+============================================================
+7. Mensagem duplicada: a mesma mensagem publicada de novo
+============================================================
+Antes : notificacoes=3 auditoria=3 contratosConcluidos=6
+Reenviando a mensagem de sequencia 112. O eventId e o mesmo, logo os consumidores
+recebem uma mensagem que ja processaram.
+   status=PENDENTE eventId=1914174b-06b4-4615-9d40-ca5c1f20f2f7
+Depois: notificacoes=3 auditoria=3 contratosConcluidos=6
+   RESULTADO: nada mudou. Os tres consumidores descartaram a reentrega.
+
+Marcas de idempotencia gravadas em cada banco:
+-- notificacoes
+   ContratoCriado       consumidor=notificacao-service  eventId=b94e4352-32f7-42a8-a460-dd9c57df8cd5
+   EntregaRegistrada    consumidor=notificacao-service  eventId=046f7580-a6f7-45f0-9eb4-c178f8c448b0
+   ContratoConcluido    consumidor=notificacao-service  eventId=1914174b-06b4-4615-9d40-ca5c1f20f2f7
+-- reputacoes
+   ContratoConcluido    consumidor=reputacao-service    eventId=1914174b-06b4-4615-9d40-ca5c1f20f2f7
+
+============================================================
+8. Ordenacao: cinco contratos percorrendo o ciclo completo
+============================================================
+Contratos distintos podem ser processados em paralelo (particoes diferentes);
+os eventos de um mesmo contrato precisam chegar em ordem.
+Os cinco contratos sao do mesmo freelancer, novo nesta execucao. A particao e escolhida pelo
+contrato, entao as conclusoes dele sao consumidas em paralelo por threads diferentes e
+disputam o mesmo registro de reputacao.
+   cb4ae12a-8137-4f38-826d-c900b9ee19c7: ContratoCriado -> EntregaRegistrada -> ContratoConcluido   [OK]
+   4a569b77-ee35-420d-8553-42af264776dd: ContratoCriado -> EntregaRegistrada -> ContratoConcluido   [OK]
+   38a36d50-35f3-49a9-bc2d-e66ca6c1ecb2: ContratoCriado -> EntregaRegistrada -> ContratoConcluido   [OK]
+   d24217e4-0426-4d6a-afec-5f5b69a52776: ContratoCriado -> EntregaRegistrada -> ContratoConcluido   [OK]
+   5d7edd30-5d7e-46b4-ac93-1eacd4e4546f: ContratoCriado -> EntregaRegistrada -> ContratoConcluido   [OK]
+
+Particoes usadas por esses contratos (chaves diferentes se espalham):
+   particao=0  contrato=5d7edd30-5d7e-46b4-ac93-1eacd4e4546f
+   particao=1  contrato=38a36d50-35f3-49a9-bc2d-e66ca6c1ecb2
+   particao=1  contrato=cb4ae12a-8137-4f38-826d-c900b9ee19c7
+   particao=1  contrato=d24217e4-0426-4d6a-afec-5f5b69a52776
+   particao=2  contrato=4a569b77-ee35-420d-8553-42af264776dd
+
+Reputacao do freelancer 55555555-5555-5555-5555-143341030776, depois das cinco conclusoes simultaneas:
+   concluidos=5 valorTotal=500.0  [OK] nenhum incremento perdido
+
+============================================================
+9. Falha no consumo: mensagem invalida vai para o dead letter topic
+============================================================
+Publicando um JSON quebrado direto no topico principal.
+A desserializacao falha, o erro nao e retentavel e a mensagem e movida para o DLT.
+
+Conteudo do DLT:
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+Partition:0	contrato-invalido	{isto nao e json
+
+Falhas registradas pelo auditoria-service (consultaveis e reprocessaveis):
+   30 falha(s) registrada(s)
+   grupo=reputacao-service    topicoOriginal=freela.contratos.eventos particao=0 offset=48
+       excecao=org.springframework.kafka.listener.ListenerExecutionFailedException
+   grupo=auditoria-service    topicoOriginal=freela.contratos.eventos particao=0 offset=48
+       excecao=org.springframework.kafka.listener.ListenerExecutionFailedException
+   grupo=notificacao-service  topicoOriginal=freela.contratos.eventos particao=0 offset=48
+       excecao=org.springframework.kafka.listener.ListenerExecutionFailedException
+   grupo=auditoria-service    topicoOriginal=freela.contratos.eventos particao=0 offset=56
+       excecao=org.springframework.kafka.listener.ListenerExecutionFailedException
+   grupo=reputacao-service    topicoOriginal=freela.contratos.eventos particao=0 offset=56
+       excecao=org.springframework.kafka.listener.ListenerExecutionFailedException
+   grupo=notificacao-service  topicoOriginal=freela.contratos.eventos particao=0 offset=56
+       excecao=org.springframework.kafka.listener.ListenerExecutionFailedException
+
+Log de erro correspondente no console dos consumidores:
+2026-09-28 14:29:03.533 ERROR service=reputacao-service traceId=6abaa3df4690c993641c15c43adac222 spanId=641c15c43adac222 correlationId= contratoId= eventId= thread=reputacao-contratos-0-C-1 logger=b.c.f.c.kafka.ConsumidorDeEventos - kafka.consumo.falha servico
+2026-09-28 14:29:03.535 ERROR service=reputacao-service traceId=6abaa3df4690c993641c15c43adac222 spanId=641c15c43adac222 correlationId= contratoId= eventId= thread=reputacao-contratos-0-C-1 logger=b.c.f.c.kafka.KafkaConsumidorConfig - kafka.consumo.dlt topicoO
+2026-09-28 14:34:09.588 ERROR service=reputacao-service traceId=6abaa511fa5b6600f81d85457a03c0eb spanId=f81d85457a03c0eb correlationId= contratoId= eventId= thread=reputacao-contratos-0-C-1 logger=b.c.f.c.kafka.ConsumidorDeEventos - kafka.consumo.falha servico
+2026-09-28 14:34:09.590 ERROR service=reputacao-service traceId=6abaa511fa5b6600f81d85457a03c0eb spanId=f81d85457a03c0eb correlationId= contratoId= eventId= thread=reputacao-contratos-0-C-1 logger=b.c.f.c.kafka.KafkaConsumidorConfig - kafka.consumo.dlt topicoO
+
+Reprocessamento pela API: a falha mais recente e republicada no topico principal.
+POST /api/auditoria/falhas/3969a1a9-d772-401b-9f85-eca713a3e152/reprocessar
+   reenviadoEm=2026-09-28T17:34:34.926817500Z particaoOriginal=0 offsetOriginal=56
+   falhas registradas: antes=30 depois=33
+   A mensagem voltou ao topico principal e foi lida de novo pelos tres consumidores. Como o
+   corpo continua invalido, ela falhou outra vez em cada um e voltou ao DLT com um offset
+   original novo, por isso entrou como falha nova e nao como duplicata. Uma mensagem que
+   tivesse falhado por causa transitoria seria processada normalmente nesse reenvio.
+
+============================================================
+10. Logs centralizados: a mesma operacao consultada no Loki
+============================================================
+Consulta enviada ao Loki, a mesma do dashboard do Grafana:
+   {service=~".+"} | json | correlationId="demo-20260928-143312"
+Aguardando a ingestao dos logs dos cinco servicos...
+   78 linhas de log de 5 servicos, vindas de uma unica consulta:
+      api-gateway               6 linhas
+      auditoria-service        16 linhas
+      contrato-service         26 linhas
+      notificacao-service      16 linhas
+      reputacao-service        14 linhas
+
+   Primeiras linhas, em ordem de tempo:
+      api-gateway          traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 gateway.request.inicio correlationId=demo-20260928-143312 method=POST path=/api/contrato
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 http.contrato.criar clienteId=11111111-1111-1111-1111-111111111111 freelancerId=22222222
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 contrato.criacao.inicio clienteId=11111111-1111-1111-1111-111111111111 freelancerId=2222
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 contrato.dominio.criado contratoId=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9 status=ATIVO eve
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 contrato.persistence.save.inicio contratoId=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9 status=
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 contrato.persistence.save.sucesso contratoId=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9 status
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 contrato.criacao.sucesso contratoId=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9 clienteId=11111
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 contrato.outbox.registrado eventId=b94e4352-32f7-42a8-a460-dd9c57df8cd5 eventType=Contra
+      contrato-service     traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 http.contrato.criar.response contratoId=d03ef9ff-e195-49e3-aa6e-367ce8ec46d9 status=ATIV
+      api-gateway          traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 gateway.request.fim correlationId=demo-20260928-143312 method=POST path=/api/contratos s
+      contrato-service     traceId=6abaa4d9f03039f8437b198eb1eebc43 outbox.publicacao.sucesso sequencia=110 eventId=b94e4352-32f7-42a8-a460-dd9c57df8cd5 eve
+      reputacao-service    traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 kafka.consumo.inicio servico=reputacao-service topico=freela.contratos.eventos particao=
+      auditoria-service    traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 kafka.consumo.inicio servico=auditoria-service topico=freela.contratos.eventos particao=
+      notificacao-service  traceId=6abaa4d959aa0e02d6f4ee4f948d36c4 kafka.consumo.inicio servico=notificacao-service topico=freela.contratos.eventos partica
+
+A mesma busca, pelos outros dois identificadores:
+   contratoId="d03ef9ff-e195-49e3-aa6e-367ce8ec46d9": auditoria-service=16, contrato-service=22, notificacao-service=16, reputacao-service=14
+   eventId="1914174b-06b4-4615-9d40-ca5c1f20f2f7": auditoria-service=8, contrato-service=2, notificacao-service=8, reputacao-service=8
+
+Resposta completa do Loki gravada em evidencias/loki-20260928-143312.json
+
+============================================================
+11. Rastreamento distribuido: o trace da operacao no Zipkin
+============================================================
+Consulta: traces com a tag correlationId=demo-20260928-143312
+A tag e gravada pelo gateway no span raiz, pelos servicos HTTP e pelos consumidores Kafka.
+Aguardando o envio dos spans...
+   3 trace(s) encontrado(s), um por requisicao HTTP da operacao.
+
+   traceId=6abaa4d959aa0e02d6f4ee4f948d36c4   8 spans  raiz=http post
+      servicos: api-gateway, auditoria-service, contrato-service, notificacao-service, reputacao-service
+   traceId=6abaa4d9c3809854e8ac4f7ccf4ffa21   8 spans  raiz=http post
+      servicos: api-gateway, auditoria-service, contrato-service, notificacao-service, reputacao-service
+   traceId=6abaa4d9d6cde62c24b08f0d0ec28e09  13 spans  raiz=http post
+      servicos: api-gateway, auditoria-service, contrato-service, notificacao-service, reputacao-service
+
+   Spans do trace com mais servicos, em ordem de tempo:
+      api-gateway          SERVER    http post                                       24.4 ms
+      api-gateway          CLIENT    http post                                       20.8 ms
+      contrato-service     SERVER    http post /api/contratos/{id}/conclusao         17.7 ms
+      contrato-service     -         outbox publish contratoconcluido                16.2 ms
+      contrato-service     PRODUCER  freela.contratos.eventos send                   16.2 ms
+      reputacao-service    CONSUMER  freela.contratos.eventos process                19.8 ms grupo=reputacao-service particao=0 offset=51
+      notificacao-service  CONSUMER  freela.contratos.eventos process                16.2 ms grupo=notificacao-service particao=0 offset=51
+      auditoria-service    CONSUMER  freela.contratos.eventos process                15.8 ms grupo=auditoria-service particao=0 offset=51
+      contrato-service     -         outbox publish contratoconcluido                15.7 ms
+      contrato-service     PRODUCER  freela.contratos.eventos send                   15.7 ms
+      auditoria-service    CONSUMER  freela.contratos.eventos process                 5.2 ms grupo=auditoria-service particao=0 offset=52
+      reputacao-service    CONSUMER  freela.contratos.eventos process                 5.3 ms grupo=reputacao-service particao=0 offset=52
+      notificacao-service  CONSUMER  freela.contratos.eventos process                 5.3 ms grupo=notificacao-service particao=0 offset=52
+
+Resposta completa do Zipkin gravada em evidencias/zipkin-20260928-143312.json
+
+============================================================
+Resumo
+============================================================
+correlationId principal : demo-20260928-143312
+contratoId principal    : d03ef9ff-e195-49e3-aa6e-367ce8ec46d9
+
+Arquivos desta execucao:
+  evidencias/evidencias-20260928-143312.txt
+  evidencias/loki-20260928-143312.json
+  evidencias/zipkin-20260928-143312.json
+
+Para conferir ao vivo:
+  Logs centralizados : Grafana, dashboard 'Freela - Rastreamento de operacao'
+                       consulta: {service=~".+"} | json | correlationId = `demo-20260928-143312`
+  Traces             : http://localhost:19411/zipkin/?annotationQuery=correlationId%3Ddemo-20260928-143312
+  Topicos Kafka      : Kafka UI, topico freela.contratos.eventos

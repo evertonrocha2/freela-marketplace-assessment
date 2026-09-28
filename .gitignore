@@ -3,3 +3,8 @@
 **/target/
 .DS_Store
 .env
+
+# Saida de execucao local. A pasta evidencias/ fica fora desta lista de proposito: a execucao
+# do roteiro guardada nela e parte da entrega.
+logs/
+.tmp/

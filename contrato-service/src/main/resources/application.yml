@@ -1,5 +1,6 @@
 server:
   port: 8081
+
 spring:
   application:
     name: contrato-service
@@ -16,6 +17,33 @@ spring:
         format_sql: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # O envelope ja e serializado em JSON quando entra na outbox, entao o producer so transporta
+      # texto. Isso mantem o formato da mensagem estavel e independente da versao das classes Java.
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 10
+      properties:
+        # Producer idempotente: o broker descarta reenvios do mesmo lote em caso de retry interno e
+        # preserva a ordem dentro da particao mesmo com varias requisicoes em voo.
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 30000
+        request.timeout.ms: 10000
+        linger.ms: 5
+    template:
+      # Liga a instrumentacao de observabilidade do KafkaTemplate: cria o span de producer e injeta
+      # os headers de trace na mensagem.
+      observation-enabled: true
+
+freela:
+  outbox:
+    intervalo-ms: 300
+    tamanho-lote: 50
+    max-tentativas: 5
+    timeout-envio-ms: 10000
+
 management:
   endpoints:
     web:
@@ -24,13 +52,24 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      # 100% em ambiente de avaliacao: todo fluxo precisa aparecer no Zipkin.
+      probability: 1.0
+    propagation:
+      type: w3c
+    export:
+      zipkin:
+        # Nome da propriedade no Spring Boot 4. O antigo management.zipkin.tracing.endpoint nao e
+        # mais lido, e com ele a variavel ZIPKIN_URL era ignorada sem aviso.
+        endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
 logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level service=${spring.application.name} thread=%thread logger=%logger{36} - %msg%n"
   level:
     root: INFO
     br.com.freela: INFO

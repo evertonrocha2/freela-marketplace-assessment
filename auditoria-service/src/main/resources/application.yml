@@ -1,5 +1,6 @@
 server:
   port: 8084
+
 spring:
   application:
     name: auditoria-service
@@ -13,6 +14,32 @@ spring:
     open-in-view: false
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${freela.kafka.grupo-consumidor}
+      auto-offset-reset: earliest
+      # Commit manual pelo container, depois do processamento. Com auto-commit, o offset poderia
+      # avancar antes da transacao terminar e a mensagem se perderia em caso de falha.
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      max-poll-records: 20
+    producer:
+      # Usado apenas pelo DeadLetterPublishingRecoverer ao mover mensagens para o DLT.
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+    listener:
+      ack-mode: record
+      # Instrumentacao de observabilidade: extrai o traceparent da mensagem e continua o mesmo
+      # trace iniciado no API Gateway.
+      observation-enabled: true
+
+freela:
+  kafka:
+    grupo-consumidor: auditoria-service
+    # Uma thread por particao do topico. Acima disso sobram consumidores sem particao atribuida.
+    concorrencia: 3
+
 management:
   endpoints:
     web:
@@ -21,13 +48,23 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+    propagation:
+      type: w3c
+    export:
+      zipkin:
+        # Nome da propriedade no Spring Boot 4. O antigo management.zipkin.tracing.endpoint nao e
+        # mais lido, e com ele a variavel ZIPKIN_URL era ignorada sem aviso.
+        endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
 logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level service=${spring.application.name} thread=%thread logger=%logger{36} - %msg%n"
   level:
     root: INFO
     br.com.freela: INFO

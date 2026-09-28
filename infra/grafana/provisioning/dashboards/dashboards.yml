@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: freela
+    orgId: 1
+    folder: Freela Marketplace
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

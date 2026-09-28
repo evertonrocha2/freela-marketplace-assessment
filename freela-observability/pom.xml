@@ -1,0 +1,28 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>br.com.freela</groupId><artifactId>freela-marketplace</artifactId><version>0.0.1-SNAPSHOT</version>
+    </parent>
+    <artifactId>freela-observability</artifactId>
+    <name>freela-observability</name>
+    <description>Tracing para o Zipkin e envio de logs para o Loki, comum a todas as aplicacoes</description>
+
+    <dependencies>
+        <!-- micrometer-tracing-bridge-brave + reporter Zipkin -->
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-zipkin</artifactId></dependency>
+        <!-- appender que envia as linhas de log direto para o Loki, sem agente intermediario -->
+        <dependency><groupId>com.github.loki4j</groupId><artifactId>loki-logback-appender</artifactId><version>2.0.0</version></dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration><skip>true</skip></configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

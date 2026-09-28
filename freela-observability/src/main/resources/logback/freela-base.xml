@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Configuracao de log compartilhada pelos microsservicos.
+
+  Tres destinos:
+    CONSOLE - leitura humana durante o desenvolvimento;
+    ARQUIVO - uma linha JSON por evento em logs/<servico>.json, util como evidencia offline;
+    LOKI    - envio direto para o Loki, que e onde os logs dos servicos se juntam.
+
+  As linhas escritas durante uma operacao carregam traceId, spanId e correlationId vindos do MDC,
+  e toda linha JSON carrega o campo service. Sao esses campos que permitem recuperar uma operacao
+  inteira no Grafana sem abrir o console de cada aplicacao. Linhas de inicializacao, que nao
+  pertencem a nenhuma operacao, saem sem traceId.
+
+  Nao logamos corpo de requisicao, credenciais nem dados pessoais: o payload dos eventos so
+  aparece em log no auditoria-service, que e o servico cujo proposito e guardar esse conteudo.
+
+  Se o Loki estiver fora do ar o appender apenas descarta os lotes apos as retentativas: a
+  aplicacao continua funcionando e o console e o arquivo seguem recebendo tudo. O endereco pode
+  ser trocado pela variavel de ambiente LOKI_URL.
+-->
+<included>
+
+    <property name="APP_NAME" value="${APP_NAME:-aplicacao}"/>
+    <property name="LOKI_URL" value="${LOKI_URL:-http://localhost:3100/loki/api/v1/push}"/>
+    <property name="LOG_DIR" value="${LOG_DIR:-logs}"/>
+
+    <property name="PADRAO_CONSOLE"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level service=${APP_NAME} traceId=%X{traceId:-} spanId=%X{spanId:-} correlationId=%X{correlationId:-} contratoId=%X{contratoId:-} eventId=%X{eventId:-} thread=%thread logger=%logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${PADRAO_CONSOLE}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="ARQUIVO" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.json</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.%i.json</fileNamePattern>
+            <maxFileSize>20MB</maxFileSize>
+            <maxHistory>3</maxHistory>
+            <totalSizeCap>200MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="br.com.freela.observability.logback.JsonPorLinhaLayout">
+                <customProvider class="br.com.freela.observability.logback.ServicoJsonProvider">
+                    <servico>${APP_NAME}</servico>
+                </customProvider>
+                <mdc><noPrefix>true</noPrefix></mdc>
+            </layout>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+        <http>
+            <url>${LOKI_URL}</url>
+            <connectionTimeoutMs>5000</connectionTimeoutMs>
+            <requestTimeoutMs>10000</requestTimeoutMs>
+            <maxRetries>2</maxRetries>
+            <dropRateLimitedBatches>true</dropRateLimitedBatches>
+        </http>
+        <batch>
+            <maxItems>500</maxItems>
+            <timeoutMs>1000</timeoutMs>
+            <drainOnStop>true</drainOnStop>
+        </batch>
+        <!-- Os pares de label sao separados por quebra de linha (padrao do loki4j 2.x).
+             Mantemos so service e level como labels: cardinalidade baixa e o que o Loki pede.
+             correlationId, contratoId, eventId e traceId viajam no corpo JSON e sao filtrados
+             com "| json | campo = ..." na consulta. -->
+        <labels>
+            service = ${APP_NAME}
+            level = %level
+        </labels>
+        <message class="com.github.loki4j.logback.JsonLayout">
+            <customProvider class="br.com.freela.observability.logback.ServicoJsonProvider">
+                <servico>${APP_NAME}</servico>
+            </customProvider>
+            <mdc><noPrefix>true</noPrefix></mdc>
+        </message>
+    </appender>
+
+    <appender name="LOKI_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>2048</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+        <appender-ref ref="LOKI"/>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ARQUIVO"/>
+        <appender-ref ref="LOKI_ASYNC"/>
+    </root>
+
+</included>
